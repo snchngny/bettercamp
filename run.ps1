@@ -65,8 +65,9 @@ try {
     $command += '; exit $global:LASTEXITCODE'
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
 
-    $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw "BetterCamp stopped with exit code $($process.ExitCode)." }
+    & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded
+    $childExitCode = $LASTEXITCODE
+    if ($childExitCode -ne 0) { throw "BetterCamp stopped with exit code $childExitCode." }
     $global:LASTEXITCODE = 0
 } finally {
     $resolvedBase = [IO.Path]::GetFullPath($launcherBase).TrimEnd('\') + '\'

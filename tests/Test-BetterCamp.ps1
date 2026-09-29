@@ -95,6 +95,7 @@ try {
     $runSource = Get-Content -LiteralPath (Join-Path $root 'run.ps1') -Raw
     $mainSource = Get-Content -LiteralPath (Join-Path $root 'bettercamp.ps1') -Raw
     Assert-True ($runSource -match '\$global:LASTEXITCODE = 0; &' -and $runSource -match 'exit \$global:LASTEXITCODE') 'launcher initializes the child exit code before strict-mode scripts'
+    Assert-True ($runSource -notmatch 'Start-Process -FilePath.*WindowsPowerShell' -and $runSource -match '\$childExitCode = \$LASTEXITCODE') 'launcher keeps child output in the current PowerShell window'
     Assert-True ($mainSource -match '\$global:LASTEXITCODE = 0; &' -and $mainSource -match 'exit \$global:LASTEXITCODE') 'elevation initializes the child exit code before strict-mode scripts'
     $originalFindCachedPackage = ${function:Find-BetterCampCachedPackage}
     function Get-BetterCampInstalledSoftware {
