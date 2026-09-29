@@ -18,7 +18,7 @@ $launcherBase = Join-Path $env:LOCALAPPDATA 'BetterCamp/launcher'
 $launcherRoot = Join-Path $launcherBase ([guid]::NewGuid().ToString('N'))
 $commonDirectory = Join-Path $launcherRoot 'scripts'
 $audioDirectory = Join-Path $launcherRoot 'Audio_2011_2012'
-$launcherRevision = '24c664d6e0e89e343691a11a60794d5efab7abda'
+$launcherRevision = 'd4cdf0d69ce54c32804baee5628f5f719d5b13f7'
 
 try {
     function Get-LauncherHash([string]$Path) {
@@ -34,7 +34,7 @@ try {
     New-Item -ItemType Directory -Path $audioDirectory -Force | Out-Null
     $files = @(
         @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = 'FB2F6436C41366FF4A6492766E791CC268CEC08491E85F97C7361EE121561F51' },
-        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = '7F23CBB543FBD721C81A2E8B422F489F6EF7395DEF7D6821EBCED693A6004EAB' },
+        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = '1F85D0FE0FDAAC63B483BE6033E90B1F3DC58A3916F3C8D10D8A6A4F70230AC8' },
         @{ Name = 'Audio_2011_2012/asl.exe'; Destination = (Join-Path $audioDirectory 'asl.exe'); Sha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' },
         @{ Name = 'Audio_2011_2012/dsdt_2012.aml'; Destination = (Join-Path $audioDirectory 'dsdt_2012.aml'); Sha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87' }
     )
