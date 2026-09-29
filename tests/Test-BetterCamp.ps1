@@ -92,6 +92,10 @@ try {
     $softwareWithUnnamedEntry = @(Get-BetterCampInstalledSoftware @('Boot Camp', 'Boot Camp Services'))
     Assert-True ($softwareWithUnnamedEntry.Count -eq 1 -and $softwareWithUnnamedEntry[0].DisplayName -eq 'Boot Camp Services') 'uninstall entries without DisplayName are skipped under strict mode'
     Remove-Item -Path Function:Get-ItemProperty -Force
+    $runSource = Get-Content -LiteralPath (Join-Path $root 'run.ps1') -Raw
+    $mainSource = Get-Content -LiteralPath (Join-Path $root 'bettercamp.ps1') -Raw
+    Assert-True ($runSource -match '\$global:LASTEXITCODE = 0; &' -and $runSource -match 'exit \$global:LASTEXITCODE') 'launcher initializes the child exit code before strict-mode scripts'
+    Assert-True ($mainSource -match '\$global:LASTEXITCODE = 0; &' -and $mainSource -match 'exit \$global:LASTEXITCODE') 'elevation initializes the child exit code before strict-mode scripts'
     $originalFindCachedPackage = ${function:Find-BetterCampCachedPackage}
     function Get-BetterCampInstalledSoftware {
         param($Names)

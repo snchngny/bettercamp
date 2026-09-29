@@ -27,14 +27,14 @@ try {
     }
     if ($BootCampPath) { $BootCampPath = Resolve-BetterCampPath -Path $BootCampPath -Root $PSScriptRoot }
     if (-not $DownloadOnly -and -not (Test-BetterCampAdministrator)) {
-        $command = '& ' + (ConvertTo-BetterCampLiteral $PSCommandPath)
+        $command = '$global:LASTEXITCODE = 0; & ' + (ConvertTo-BetterCampLiteral $PSCommandPath)
         if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-BetterCampLiteral $BootCampPath) }
         if ($AudioPatchOnly) { $command += ' -AudioPatchOnly' }
         if ($RepairAudio) { $command += ' -RepairAudio' }
         if ($RemoveAudioPatch) { $command += ' -RemoveAudioPatch' }
         if ($CleanupBootCamp) { $command += ' -CleanupBootCamp' }
         if ($SkipAudioPatch) { $command += ' -SkipAudioPatch' }
-        $command += '; exit $LASTEXITCODE'
+        $command += '; exit $global:LASTEXITCODE'
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         $child = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -Wait -PassThru
         exit $child.ExitCode
