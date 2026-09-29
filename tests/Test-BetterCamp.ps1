@@ -2,6 +2,8 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $root 'scripts/BetterCamp.Common.ps1')
+# Never read the development PC's BCD during tests.
+function Get-BetterCampCurrentBcdOutput { return '' }
 $script:count = 0
 function Assert-True($Condition, [string]$Label) {
     if (-not $Condition) { throw "FAIL: $Label" }
@@ -19,6 +21,9 @@ foreach ($model in @('MacBookPro9,1', 'MacBookPro9,2', 'MacBookPro10,1', 'MacBoo
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro8,1';Build=26100;Is64Bit=$true}) } 'wrong model'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro9,2';Build=19045;Is64Bit=$true}) } 'Windows 10'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro9,2';Build=26100;Is64Bit=$false}) } '32-bit OS'
+function Get-BetterCampCurrentBcdOutput { return 'path                  \Windows\system32\winload.efi' }
+Assert-True ((Get-BetterCampEffectiveFirmware ([pscustomobject]@{Firmware='BIOS'})) -eq 'UEFI') 'active winload.efi overrides stale BIOS registry indicator'
+function Get-BetterCampCurrentBcdOutput { return '' }
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('bettercamp-tests-' + [guid]::NewGuid().ToString('N'))
 $pack = Join-Path $temporary "USB drive [1] & O'Brien/BootCamp"

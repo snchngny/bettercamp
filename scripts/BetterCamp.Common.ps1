@@ -249,6 +249,25 @@ function Invoke-BetterCampNative([string]$FilePath, [string[]]$Arguments) {
     return [pscustomobject]@{ ExitCode = $exitCode; Output = ($output -join [Environment]::NewLine) }
 }
 
+function Get-BetterCampCurrentBcdOutput {
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& "$env:SystemRoot\System32\bcdedit.exe" /enum '{current}' 2>&1)
+        if ($LASTEXITCODE -ne 0) { return '' }
+        return ($output -join [Environment]::NewLine)
+    } finally { $ErrorActionPreference = $previousPreference }
+}
+
+function Get-BetterCampEffectiveFirmware($Machine) {
+    $loader = Get-BetterCampWindowsLoaderInfo (Get-BetterCampCurrentBcdOutput)
+    if ($null -eq $loader) { return $Machine.Firmware }
+    if ($Machine.Firmware -ne 'Unknown' -and $Machine.Firmware -ne $loader.Firmware) {
+        Write-Warning "Firmware indicators disagree: PEFirmwareType reports $($Machine.Firmware), but the current BCD entry uses $($loader.Path). BetterCamp will use the active Windows loader mode $($loader.Firmware)."
+    }
+    return $loader.Firmware
+}
+
 function Get-BetterCampAudioPatchPaths([string]$Root) {
     $directory = Join-Path $Root 'Audio_2011_2012'
     $systemRootOverride = Get-Variable -Name BetterCampSystemRootOverride -Scope Script -ValueOnly -ErrorAction SilentlyContinue
@@ -284,7 +303,8 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
     if ($Machine.Model -ne 'MacBookPro9,2') {
         throw "The bundled 2012 audio table is verified only for MacBookPro9,2; detected $($Machine.Model)."
     }
-    if ($Machine.Firmware -ne 'UEFI') {
+    $effectiveFirmware = Get-BetterCampEffectiveFirmware $Machine
+    if ($effectiveFirmware -ne 'UEFI') {
         Write-Host 'Legacy BIOS boot detected; the UEFI audio patch is not required.'
         return $false
     }
@@ -382,12 +402,13 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
 }
 
 function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
+    $effectiveFirmware = Get-BetterCampEffectiveFirmware $Machine
     Install-BetterCampAudioPatch -Machine $Machine -Root $Root | Out-Null
     $cirrus = Join-Path $Path 'Drivers\Cirrus\CirrusAudioCS4206x64.exe'
     if (-not (Test-Path -LiteralPath $cirrus -PathType Leaf)) { throw 'The Cirrus CS4206 driver installer is missing.' }
     $cirrusHash = (Get-BetterCampDriverHashes)['Cirrus\CirrusAudioCS4206x64.exe']
     Assert-BetterCampDriverHash -Path $cirrus -ExpectedHash $cirrusHash -Label 'Cirrus\CirrusAudioCS4206x64.exe'
-    if ($Machine.Firmware -eq 'BIOS') {
+    if ($effectiveFirmware -eq 'BIOS') {
         $legacyControllers = @(Get-CimInstance -ClassName Win32_PnPEntity | Where-Object {
             $_.ConfigManagerErrorCode -eq 10 -and $_.PNPDeviceID -match '^PCI\\VEN_8086&DEV_(1C20|1E20)(?:&|\\|$)'
         })
@@ -408,7 +429,7 @@ function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
     foreach ($device in $problems) {
         Write-Host "Pending device: $($device.Name) | Code $($device.ConfigManagerErrorCode) | $($device.PNPDeviceID)"
     }
-    if ($Machine.Firmware -eq 'BIOS') {
+    if ($effectiveFirmware -eq 'BIOS') {
         Write-Host 'Legacy BIOS audio repair completed. Shut Windows down fully, wait 20 seconds, then power the MacBook on before judging Code 10.'
     } else {
         Write-Host 'Audio repair staged with a higher ACPI table revision. Restart Windows before judging Code 10.'
@@ -488,7 +509,7 @@ function Show-BetterCampAudioDiagnosis([string]$Root, $Machine) {
     if ($null -ne $loader) {
         Write-Host "Windows boot loader: $($loader.Path) ($($loader.Firmware))"
         if ($null -ne $Machine -and $Machine.Firmware -ne 'Unknown' -and $Machine.Firmware -ne $loader.Firmware) {
-            Write-Warning "Firmware indicators disagree: PEFirmwareType reports $($Machine.Firmware), but the current BCD entry uses $($loader.Path). Do not apply or remove the DSDT patch until this mismatch is reviewed."
+            Write-Warning "Firmware indicators disagree: PEFirmwareType reports $($Machine.Firmware), but the current BCD entry uses $($loader.Path). BetterCamp will use the active Windows loader mode $($loader.Firmware) for audio repair."
         }
     } else {
         Write-Host 'Windows boot loader: not shown in the current boot entry'

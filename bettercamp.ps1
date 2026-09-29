@@ -70,10 +70,10 @@ try {
             } elseif ($RepairAudio) {
                 Repair-BetterCampAudio -Path $pack -Machine $machine -Root $PSScriptRoot
             } else {
-                if (-not $SkipAudioPatch -and $machine.Firmware -eq 'UEFI') {
+                if (-not $SkipAudioPatch) {
                     if ($machine.Model -eq 'MacBookPro9,2') {
                         Install-BetterCampAudioPatch -Machine $machine -Root $PSScriptRoot | Out-Null
-                    } else {
+                    } elseif ((Get-BetterCampEffectiveFirmware $machine) -eq 'UEFI') {
                         Write-Warning "The bundled audio table is not verified for $($machine.Model); the UEFI audio patch was not applied."
                     }
                 }
