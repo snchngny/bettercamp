@@ -1,15 +1,22 @@
 # BetterCamp — MacBook Pro 2012 / Windows 11
 
-MacBook Pro 2012に**インストール済みのWindows 11**から、`Start-BetterCamp.cmd`をダブルクリックしてBoot Campドライバーのセットアップを開始する版です。Pythonのインストールは不要です。
+MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShellの1行または`Start-BetterCamp.cmd`でBoot Campドライバーのセットアップを開始する版です。Pythonのインストールは不要です。
 
 [vinaypundith/bettercamp](https://github.com/vinaypundith/bettercamp) の2026-07-04時点の最新 `main`（`b2bd633675116ef489f8cd76ae82ba0fb22f8d16`）を基に改修しています。確認日: 2026-09-29。
 
 ## 起動方法
 
-1. [ZIPをダウンロード](https://github.com/snchngny/bettercamp/archive/refs/heads/main.zip)し、右クリック →「すべて展開」
-2. Windows 11上で、展開したフォルダーの **`Start-BetterCamp.cmd` をダブルクリック**
-3. 管理者権限を求めるWindowsの画面で「はい」を選ぶ
-4. Appleのインストーラーに従い、完了後にWindowsを再起動
+Windows 11でPowerShellを開き、次の1行を貼り付けてEnterを押します。リポジトリのZIP保存・展開は不要です。
+
+```powershell
+irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1 | iex
+```
+
+管理者権限を求めるWindowsの画面で「はい」を選び、Appleのインストーラーに従います。完了後にWindowsを再起動してください。
+
+ブラウザーからファイルを手動ダウンロードしたくない、という意味での「ダウンロード不要」です。起動用ファイルは一時フォルダーへ自動取得して終了時に削除します。Boot Campドライバーが未導入なら、約925MBのApple公式パックの通信取得は必要です。インターネット通信も一切使えない場合は、後述のオフライン手順を使ってください。
+
+PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダウンロード](https://github.com/snchngny/bettercamp/archive/refs/heads/main.zip)して展開し、`Start-BetterCamp.cmd`をダブルクリックします。
 
 ドライバーがなければ、Apple公式サイトから約925MBの対応パックを取得・展開します。インターネット接続と、ダウンロード・展開用に数GBの空き容量が必要です。Wi-Fiがまだ使えない場合は有線接続か、次のオフライン手順を使ってください。
 

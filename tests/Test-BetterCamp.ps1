@@ -122,6 +122,21 @@ try {
     }
     & (Join-Path $root 'bettercamp.ps1') -Diagnose
     Assert-True ($LASTEXITCODE -eq 1) 'reject non-target machine'
+
+    # Bootstrap stages the launcher without requiring a repository ZIP download.
+    $bootstrapSource = Join-Path $temporary 'bootstrap source'
+    $bootstrapScripts = Join-Path $bootstrapSource 'scripts'
+    New-Item -ItemType Directory -Path $bootstrapScripts -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $bootstrapSource 'bettercamp.ps1') -Value @'
+param([string]$BootCampPath, [switch]$Diagnose, [switch]$DownloadOnly)
+if ($BootCampPath -ne "USB path" -or -not $Diagnose -or -not $DownloadOnly) { exit 7 }
+if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "scripts/BetterCamp.Common.ps1"))) { exit 8 }
+exit 0
+'@
+    Set-Content -LiteralPath (Join-Path $bootstrapScripts 'BetterCamp.Common.ps1') -Value '# bootstrap fixture'
+    Remove-Item Function:Start-Process
+    & (Join-Path $root 'run.ps1') -LauncherSourceDirectory $bootstrapSource -BootCampPath 'USB path' -Diagnose -DownloadOnly
+    Assert-True ($LASTEXITCODE -eq 0) 'one-line bootstrap stages launcher and forwards arguments'
 } finally {
     # Only delete this test's newly created directory directly under the OS temporary directory.
     $resolved = [IO.Path]::GetFullPath($temporary)
