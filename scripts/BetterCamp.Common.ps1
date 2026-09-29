@@ -190,19 +190,38 @@ function Get-BetterCampInstalledSoftware([string[]]$Names) {
 }
 
 function Remove-BetterCampSoftware {
-    $products = @(Get-BetterCampInstalledSoftware @('Boot Camp', 'Boot Camp Services', 'Apple Software Update'))
-    if ($products.Count -eq 0) {
-        Write-Host 'Boot Camp Manager and Apple Software Update are not registered as installed.'
-        return
-    }
-    foreach ($product in $products) {
-        Write-Host "Removing software while preserving device drivers: $($product.DisplayName)"
-        $result = Invoke-BetterCampNative 'msiexec.exe' @('/x', $product.PSChildName, '/qn', '/norestart')
-        if ($result.ExitCode -notin @(0, 1605, 1614, 1641, 3010)) {
-            throw "Could not remove $($product.DisplayName) (exit $($result.ExitCode))."
+    Get-Process -Name 'Bootcamp', 'AppleOSSMgr', 'AppleTimeSrv' -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    $logRoot = Join-Path $env:LOCALAPPDATA 'BetterCamp/logs'
+    New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+    $successCodes = @(0, 1605, 1614, 1641, 3010)
+    $bootCampProducts = @(Get-BetterCampInstalledSoftware @('Boot Camp', 'Boot Camp Services'))
+    if ($bootCampProducts.Count -eq 0) {
+        Write-Host 'Boot Camp Manager is not registered as installed; it may already have been removed.'
+    } else {
+        $cached = Find-BetterCampCachedPackage
+        $bootCampMsi = if ($cached) { Join-Path $cached 'Drivers\Apple\BootCamp.msi' } else { $null }
+        foreach ($product in $bootCampProducts) {
+            $target = $product.PSChildName
+            if ($bootCampMsi -and (Test-Path -LiteralPath $bootCampMsi -PathType Leaf)) { $target = $bootCampMsi }
+            $msiLog = Join-Path $logRoot ('cleanup-bootcamp-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.log')
+            Write-Host "Removing software while preserving device drivers: $($product.DisplayName)"
+            $result = Invoke-BetterCampNative 'msiexec.exe' @('/x', $target, '/passive', '/norestart', '/L*v', $msiLog)
+            if ($result.ExitCode -notin $successCodes) {
+                throw "Could not remove $($product.DisplayName) (MSI exit $($result.ExitCode)). Installer log: $msiLog"
+            }
         }
     }
-    Write-Host 'Boot Camp Manager, Control Panel and Apple Software Update cleanup completed. Device drivers were preserved.'
+    $updateProducts = @(Get-BetterCampInstalledSoftware @('Apple Software Update'))
+    foreach ($product in $updateProducts) {
+        $msiLog = Join-Path $logRoot ('cleanup-apple-update-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.log')
+        Write-Host "Removing optional software: $($product.DisplayName)"
+        $result = Invoke-BetterCampNative 'msiexec.exe' @('/x', $product.PSChildName, '/passive', '/norestart', '/L*v', $msiLog)
+        if ($result.ExitCode -notin $successCodes) {
+            Write-Warning "Apple Software Update could not be removed (MSI exit $($result.ExitCode)). Boot Camp Manager cleanup can still succeed. Log: $msiLog"
+        }
+    }
+    Write-Host 'Boot Camp Manager and Control Panel cleanup completed. Device drivers were preserved.'
 }
 
 function Assert-BetterCampFileHash([string]$Path, [string]$ExpectedHash) {

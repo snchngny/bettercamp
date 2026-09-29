@@ -83,12 +83,17 @@ try {
     Assert-Throws { Install-BetterCampDrivers -Path $pack -Machine ([pscustomobject]@{Model='MacBookPro9,2'}) } 'individual driver failure propagated'
 
     $script:removedProducts = @()
+    $originalFindCachedPackage = ${function:Find-BetterCampCachedPackage}
     function Get-BetterCampInstalledSoftware {
-        return @(
+        param($Names)
+        $all = @(
             [pscustomobject]@{DisplayName='Boot Camp Services';PSChildName='{FA2B2C2A-EA41-495A-9308-60726125D562}'},
             [pscustomobject]@{DisplayName='Apple Software Update';PSChildName='{12345678-1234-1234-1234-123456789ABC}'}
         )
+        return @($all | Where-Object { $_.DisplayName -in $Names })
     }
+    function Get-Process { @() }
+    function Find-BetterCampCachedPackage { return $null }
     function Invoke-BetterCampNative {
         param($FilePath, $Arguments)
         $script:removedProducts += ($Arguments -join ' ')
@@ -96,8 +101,9 @@ try {
     }
     Remove-BetterCampSoftware
     Assert-True ($script:removedProducts.Count -eq 2) 'Boot Camp software cleanup removes two MSI products'
-    Assert-True (@($script:removedProducts | Where-Object { $_ -match '/x \{FA2B2C2A-' }).Count -eq 1) 'Boot Camp Services removed by product code'
+    Assert-True (@($script:removedProducts | Where-Object { $_ -match '/x \{FA2B2C2A-.* /passive .* /L\*v ' }).Count -eq 1) 'Boot Camp Services removed by product code with MSI log'
     Assert-True ($script:driverCalls.Count -eq 33) 'software cleanup does not remove device drivers'
+    Set-Item -Path Function:Find-BetterCampCachedPackage -Value $originalFindCachedPackage
 
     # MacBookPro9,2 UEFI audio patch: enable, load, record state, and fully revert.
     $oldAudioLocalAppData = $env:LOCALAPPDATA
