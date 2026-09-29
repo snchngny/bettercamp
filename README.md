@@ -76,13 +76,32 @@ bettercamp-main/
 
 ログは `%LOCALAPPDATA%\BetterCamp\logs` に保存します。診断はログファイルを作成しません。失敗時は画面のエラーとログを確認し、成功と表示されるまで再起動後の動作確認を完了扱いにしないでください。
 
-## 音声が出ない場合
+## UEFI音声パッチ
 
-UEFI起動の2012年モデルでは、Boot Camp導入だけで内蔵音声が直るとは限りません。まず再起動とWindows Updateのオプションのドライバー更新を確認してください。
+`MacBookPro9,2`をUEFI起動している場合、通常の1行起動で次も自動実行します。
 
-元プロジェクトの `Audio_2011_2012/dsdt_2012.aml` は、Windowsのテスト署名設定とACPIテーブルを変更する方式です。元READMEでの2012年実機確認は `MacBookPro9,2` に限られ、ほかの機種への共通適用は裏付けがありません。そのため新ランチャーは音声パッチ・EFI変更・旧GPUドライバーの決め打ち導入を自動実行しません。
+1. 同梱`asl.exe`と`dsdt_2012.aml`のSHA-256を検証
+2. `bcdedit`でWindowsのテスト署名モードを有効化
+3. Microsoft ASLの`/loadtable`で音声修正済みDSDTを登録
+4. Apple Boot Campドライバーを導入
 
-音声が残る場合は `-Diagnose` の結果と、デバイスマネージャーの対象デバイス・エラーコードを確認して機種別に対処してください。**旧 `bettercamp.py`、`bettercamp2.py`、`fix9400.py`、`bclaunch_test.ps1` は新しい起動入口ではありません。** 上流の履歴・素材として保持していますが、直接実行しないでください。
+変更は再起動後に有効になります。テスト署名モードではデスクトップに「テスト モード」の表示が出ます。MicrosoftはACPIテーブル上書きを開発・テスト用とし、起動不能になる可能性を警告しています。実行前にWindows回復環境またはmacOSからWindowsボリュームへアクセスできる状態を用意してください。Secure Bootが有効な場合は適用を停止します。
+
+すでにBoot Campドライバーを導入済みで、音声パッチだけ適用する場合:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1))) -AudioPatchOnly
+```
+
+元へ戻す場合。登録したDSDTを削除し、BetterCampが今回有効にした場合だけテスト署名モードも無効にします:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1))) -RemoveAudioPatch
+```
+
+`MacBookPro9,1`、`MacBookPro10,1`、`MacBookPro10,2`には同じDSDTを自動適用しません。元READMEでの2012年実機確認が`MacBookPro9,2`だけで、機種固有ACPIの横断利用を確認できないためです。`-Diagnose`で機種IDを確認できます。Boot Camp導入だけにする場合は`-SkipAudioPatch`を指定できます。
+
+**旧 `bettercamp.py`、`bettercamp2.py`、`fix9400.py`、`bclaunch_test.ps1` は新しい起動入口ではありません。** 上流の履歴・素材として保持していますが、直接実行しないでください。
 
 ## 改修内容と検証
 
@@ -91,6 +110,7 @@ UEFI起動の2012年モデルでは、Boot Camp導入だけで内蔵音声が直
 - 管理者昇格、空白・角括弧・アポストロフィを含むパス、終了コードを処理
 - `BootCamp.xml` をXMLとして読み、行番号に依存しないバージョン確認
 - Apple公式ZIPの取得、Appleのインストーラー署名確認、ログ保存
+- `MacBookPro9,2` UEFI環境のテスト署名設定、DSDT音声パッチ、状態記録と復旧
 - 複数のインストーラーを同時に起動せず、完了まで待機
 
 Windows PowerShell 5.1での回帰テスト:
@@ -99,7 +119,7 @@ Windows PowerShell 5.1での回帰テスト:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-BetterCamp.ps1
 ```
 
-テストは機種判定、パス、XML、署名エラー、終了コード、診断入口を確認し、実際のドライバーや起動設定を変更しません。GitHub Actionsでも同じテストを実行します。
+テストは機種判定、パス、XML、署名エラー、終了コード、診断入口、音声パッチ適用・失敗時のロールバック・削除を確認し、実際のドライバーや起動設定を変更しません。GitHub Actionsでも同じテストを実行します。
 
 ## 出典・既存手段との比較
 
@@ -108,6 +128,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-BetterCamp.
 - [Apple: Boot Camp 5.1.5621の対象機種・ダウンロード](https://support.apple.com/en-us/106412)
 - [Apple: Windowsサポートソフトウェアをダウンロード](https://support.apple.com/en-us/102465)
 - [Microsoft: WMICの廃止とPowerShellへの移行](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/wmic)
+- [Microsoft: ASL CompilerとACPIテーブル上書き](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/microsoft-asl-compiler)
+- [Microsoft: Windowsテスト署名モード](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/the-testsigning-boot-configuration-option)
 - [上流READMEとクレジット](docs/UPSTREAM-README.md)
 
 上流のコード・同梱素材・クレジットを保持したForkです。上流にはリポジトリ全体のLICENSEファイルがないため、このForkで第三者素材の利用許諾を新たに付与するものではありません。Appleのドライバーパックはリポジトリに含めず、公式配布元から取得します。

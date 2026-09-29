@@ -67,6 +67,71 @@ try {
     $script:installerCode = 1603
     Assert-Throws { Install-BetterCampPackage $pack } 'installer failure propagated'
 
+    # MacBookPro9,2 UEFI audio patch: enable, load, record state, and fully revert.
+    $oldAudioLocalAppData = $env:LOCALAPPDATA
+    $env:LOCALAPPDATA = Join-Path $temporary 'audio state'
+    $audioMachine = [pscustomobject]@{Model='MacBookPro9,2';Firmware='UEFI'}
+    $script:nativeCalls = @()
+    function Confirm-SecureBootUEFI { return $false }
+    function Invoke-BetterCampNative {
+        param($FilePath, $Arguments)
+        $script:nativeCalls += [pscustomobject]@{FilePath=$FilePath;Arguments=($Arguments -join ' ')}
+        if ($Arguments[0] -eq '/enum') { return [pscustomobject]@{ExitCode=0;Output="testsigning    No"} }
+        return [pscustomobject]@{ExitCode=0;Output='ok'}
+    }
+    Assert-True (Install-BetterCampAudioPatch -Machine $audioMachine -Root $root) 'audio patch applied'
+    $audioState = Get-BetterCampAudioPatchPaths $root
+    Assert-True (Test-Path -LiteralPath $audioState.State) 'audio patch state recorded'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning on' }).Count -eq 1) 'test signing enabled'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v *dsdt_2012.aml' }).Count -eq 1) 'DSDT loaded'
+    Remove-BetterCampAudioPatch -Machine $audioMachine -Root $root
+    Assert-True (-not (Test-Path -LiteralPath $audioState.State)) 'audio patch state removed'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012.aml' }).Count -eq 1) 'DSDT override removed'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'test signing restored'
+
+    New-Item -ItemType Directory -Path (Split-Path $audioState.State -Parent) -Force | Out-Null
+    Set-Content -LiteralPath $audioState.State -Value '{broken json'
+    $script:nativeCalls = @()
+    Assert-Throws { Remove-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'damaged state blocks removal'
+    Assert-True ($script:nativeCalls.Count -eq 0) 'damaged state changes no boot or ACPI settings'
+    Remove-Item -LiteralPath $audioState.State -Force
+
+    $stateBlocker = Join-Path $temporary 'local-app-data-is-a-file'
+    Set-Content -LiteralPath $stateBlocker -Value 'blocks state directory creation'
+    $env:LOCALAPPDATA = $stateBlocker
+    $script:nativeCalls = @()
+    Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'state write failure reported'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012.aml' }).Count -eq 1) 'state failure removes DSDT override'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'state failure restores test signing'
+    $env:LOCALAPPDATA = Join-Path $temporary 'audio state'
+
+    Assert-Throws { Install-BetterCampAudioPatch -Machine ([pscustomobject]@{Model='MacBookPro9,1';Firmware='UEFI'}) -Root $root } 'audio table blocked on unverified model'
+    $script:nativeCalls = @()
+    Assert-True (-not (Install-BetterCampAudioPatch -Machine ([pscustomobject]@{Model='MacBookPro9,2';Firmware='BIOS'}) -Root $root)) 'legacy BIOS skips UEFI patch'
+    Assert-True ($script:nativeCalls.Count -eq 0) 'legacy BIOS changes nothing'
+    function Confirm-SecureBootUEFI { return $true }
+    Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'Secure Boot blocks audio patch'
+
+    $tamperedRoot = Join-Path $temporary 'tampered audio'
+    $tamperedAudio = Join-Path $tamperedRoot 'Audio_2011_2012'
+    New-Item -ItemType Directory -Path $tamperedAudio -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'Audio_2011_2012/asl.exe') -Destination $tamperedAudio
+    Set-Content -LiteralPath (Join-Path $tamperedAudio 'dsdt_2012.aml') -Value 'tampered'
+    function Confirm-SecureBootUEFI { return $false }
+    Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $tamperedRoot } 'tampered audio table blocked'
+
+    $script:nativeCalls = @()
+    function Invoke-BetterCampNative {
+        param($FilePath, $Arguments)
+        $script:nativeCalls += [pscustomobject]@{FilePath=$FilePath;Arguments=($Arguments -join ' ')}
+        if ($Arguments[0] -eq '/enum') { return [pscustomobject]@{ExitCode=0;Output="testsigning    No"} }
+        if ($FilePath -like '*asl.exe') { return [pscustomobject]@{ExitCode=5;Output='load failed'} }
+        return [pscustomobject]@{ExitCode=0;Output='ok'}
+    }
+    Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'failed DSDT load is reported'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'failed load rolls back test signing'
+    $env:LOCALAPPDATA = $oldAudioLocalAppData
+
     # CLI integration: no elevation, network or installation may occur during diagnosis.
     function Get-CimInstance {
         param($ClassName)
@@ -124,19 +189,16 @@ try {
     Assert-True ($LASTEXITCODE -eq 1) 'reject non-target machine'
 
     # Bootstrap stages the launcher without requiring a repository ZIP download.
-    $bootstrapSource = Join-Path $temporary 'bootstrap source'
-    $bootstrapScripts = Join-Path $bootstrapSource 'scripts'
-    New-Item -ItemType Directory -Path $bootstrapScripts -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $bootstrapSource 'bettercamp.ps1') -Value @'
-param([string]$BootCampPath, [switch]$Diagnose, [switch]$DownloadOnly)
-if ($BootCampPath -ne "USB path" -or -not $Diagnose -or -not $DownloadOnly) { exit 7 }
-if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "scripts/BetterCamp.Common.ps1"))) { exit 8 }
-exit 0
-'@
-    Set-Content -LiteralPath (Join-Path $bootstrapScripts 'BetterCamp.Common.ps1') -Value '# bootstrap fixture'
     Remove-Item Function:Start-Process
-    & (Join-Path $root 'run.ps1') -LauncherSourceDirectory $bootstrapSource -BootCampPath 'USB path' -Diagnose -DownloadOnly
-    Assert-True ($LASTEXITCODE -eq 0) 'one-line bootstrap stages launcher and forwards arguments'
+    & (Join-Path $root 'run.ps1') -LauncherSourceDirectory $root -StageOnly
+    Assert-True ($LASTEXITCODE -eq 0) 'one-line bootstrap verifies all staged launcher files'
+    $tamperedLauncher = Join-Path $temporary 'tampered launcher'
+    New-Item -ItemType Directory -Path (Join-Path $tamperedLauncher 'scripts'),(Join-Path $tamperedLauncher 'Audio_2011_2012') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'bettercamp.ps1') -Destination $tamperedLauncher
+    Copy-Item -LiteralPath (Join-Path $root 'scripts/BetterCamp.Common.ps1') -Destination (Join-Path $tamperedLauncher 'scripts')
+    Copy-Item -LiteralPath (Join-Path $root 'Audio_2011_2012/asl.exe'),(Join-Path $root 'Audio_2011_2012/dsdt_2012.aml') -Destination (Join-Path $tamperedLauncher 'Audio_2011_2012')
+    Add-Content -LiteralPath (Join-Path $tamperedLauncher 'bettercamp.ps1') -Value '# tampered'
+    Assert-Throws { & (Join-Path $root 'run.ps1') -LauncherSourceDirectory $tamperedLauncher -StageOnly } 'bootstrap rejects modified launcher files'
 } finally {
     # Only delete this test's newly created directory directly under the OS temporary directory.
     $resolved = [IO.Path]::GetFullPath($temporary)
