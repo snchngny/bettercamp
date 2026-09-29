@@ -9,7 +9,7 @@ MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShell�
 Windows 11でPowerShellを開き、次の1行を貼り付けてEnterを押します。リポジトリのZIP保存・展開は不要です。
 
 ```powershell
-irm https://raw.githubusercontent.com/snchngny/bettercamp/18d54001854e8f796e00209dc8749925fc610991/run.ps1 | iex
+irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1 | iex
 ```
 
 管理者権限を求めるWindowsの画面で「はい」を選びます。必要なデバイスドライバーを順番に導入した後、Windowsを再起動してください。
@@ -42,7 +42,7 @@ PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダ
 以前の版で一括セットアップを実行済みの場合、次の救済コマンドはBoot Camp ManagerとControl PanelのMSIを対話表示付きでアンインストールします。Apple Software Updateも削除を試みますが、そちらだけ失敗してもBoot Campの削除は完了扱いにします。導入済みのデバイスドライバーと音声パッチは残します。MSIエラー時は`%LOCALAPPDATA%\BetterCamp\logs`に詳細ログを保存します。
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/18d54001854e8f796e00209dc8749925fc610991/run.ps1))) -CleanupBootCamp
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -CleanupBootCamp
 ```
 
 ## 手元のドライバー・最新版を使う
@@ -83,7 +83,7 @@ bettercamp-main/
 ファイルを保存していない場合は次の1行で診断できます。`acpitabl.dat`のhashに加え、Windowsが実際に読み込んだDSDTのOEM revisionとhashも表示します:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/18d54001854e8f796e00209dc8749925fc610991/run.ps1))) -Diagnose
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -Diagnose
 ```
 
 対応MacBook上で取得・署名検証だけ実行:
@@ -109,13 +109,13 @@ bettercamp-main/
 すでにBoot Campドライバーを導入済みで、音声パッチだけ適用する場合:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/18d54001854e8f796e00209dc8749925fc610991/run.ps1))) -AudioPatchOnly
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -AudioPatchOnly
 ```
 
 元へ戻す場合。登録したDSDTを削除し、BetterCampが今回有効にした場合だけテスト署名モードも無効にします:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/18d54001854e8f796e00209dc8749925fc610991/run.ps1))) -RemoveAudioPatch
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -RemoveAudioPatch
 ```
 
 `MacBookPro9,1`、`MacBookPro10,1`、`MacBookPro10,2`には同じDSDTを自動適用しません。元READMEでの2012年実機確認が`MacBookPro9,2`だけで、機種固有ACPIの横断利用を確認できないためです。`-Diagnose`で機種IDを確認できます。Boot Camp導入だけにする場合は`-SkipAudioPatch`を指定できます。
@@ -127,7 +127,7 @@ bettercamp-main/
 次の修復コマンドは、検証済みDSDTの処理内容を変えずOEM revisionとchecksumだけを更新し、Microsoftが案内する`%SystemRoot%\System32\acpitabl.dat`として起動時に読み込ませます。異なる既存`acpitabl.dat`は上書きしません。続けて`MacBookPro9,2`のCirrus CS4206ドライバーを入れ直してデバイスを再スキャンします。**完了後の再起動が必須です。**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/18d54001854e8f796e00209dc8749925fc610991/run.ps1))) -RepairAudio
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -RepairAudio
 ```
 
 Legacy BIOS起動ではDSDTを変更しません。`-RepairAudio`はCode 10のIntel HDA controllerだけを削除・再検出し、Cirrus driverを再導入します。完了後は再起動ではなくWindowsを完全にシャットダウンし、20秒待ってから電源を入れてください。
@@ -136,7 +136,7 @@ Legacy BIOS起動ではDSDTを変更しません。`-RepairAudio`はCode 10のIn
 
 `PCI\VEN_8086&DEV_1E20`はIntel Panther Point HDA controllerです。MacBook Pro 2012の類似事例では、BIOS互換起動時はCirrus endpointが`HDAUDIO\FUNC_01&VEN_1013&DEV_4206`として見え、UEFI直接起動時は`DEV_1E20`がCode 10になるという一致した報告があります。この状態では下流のCirrus driverだけを入れ直してもcontrollerが開始しないため直りません。
 
-`-Diagnose`はレジストリの`PEFirmwareType`に加えて、現在のBCD entryが`winload.efi`か`winload.exe`かを表示します。両者が食い違う場合は警告し、DSDTを自動変更しません。Microsoftの対応は`winload.efi`がUEFI、`winload.exe`がBIOSです。
+`-Diagnose`はレジストリの`PEFirmwareType`に加えて、現在のBCD entryが`winload.efi`か`winload.exe`かを表示します。Microsoftの対応は`winload.efi`がUEFI、`winload.exe`がBIOSです。両者が食い違う場合、音声修復は現在実行中のWindows loaderを優先します。これは`PEFirmwareType`がBIOSを示しても、実際に`winload.efi`で動作するMacBookPro9,2でUEFI用DSDT修復が誤ってskipされるのを防ぎます。
 
 **旧 `bettercamp.py`、`bettercamp2.py`、`fix9400.py`、`bclaunch_test.ps1` は新しい起動入口ではありません。** 上流の履歴・素材として保持していますが、直接実行しないでください。
 
