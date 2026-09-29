@@ -387,6 +387,16 @@ function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
     if (-not (Test-Path -LiteralPath $cirrus -PathType Leaf)) { throw 'The Cirrus CS4206 driver installer is missing.' }
     $cirrusHash = (Get-BetterCampDriverHashes)['Cirrus\CirrusAudioCS4206x64.exe']
     Assert-BetterCampDriverHash -Path $cirrus -ExpectedHash $cirrusHash -Label 'Cirrus\CirrusAudioCS4206x64.exe'
+    if ($Machine.Firmware -eq 'BIOS') {
+        $legacyControllers = @(Get-CimInstance -ClassName Win32_PnPEntity | Where-Object {
+            $_.ConfigManagerErrorCode -eq 10 -and $_.PNPDeviceID -match '^PCI\\VEN_8086&DEV_(1C20|1E20)(?:&|\\|$)'
+        })
+        foreach ($controller in $legacyControllers) {
+            Write-Host "Removing failed Legacy BIOS audio controller for redetection: $($controller.PNPDeviceID)"
+            $removed = Invoke-BetterCampNative 'pnputil.exe' @('/remove-device', $controller.PNPDeviceID)
+            if ($removed.ExitCode -ne 0) { Write-Warning "Windows could not remove the failed audio controller (exit $($removed.ExitCode)); continuing with driver reinstall." }
+        }
+    }
     Write-Host 'Reinstalling the MacBookPro9,2 Cirrus CS4206 audio driver.'
     $process = Start-Process -FilePath $cirrus -WorkingDirectory (Split-Path $cirrus -Parent) -Wait -PassThru
     if ($process.ExitCode -notin @(0, 1641, 3010)) { throw "Cirrus audio driver installation failed (exit $($process.ExitCode))." }
@@ -398,7 +408,11 @@ function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
     foreach ($device in $problems) {
         Write-Host "Pending device: $($device.Name) | Code $($device.ConfigManagerErrorCode) | $($device.PNPDeviceID)"
     }
-    Write-Host 'Audio repair staged with a higher ACPI table revision. Restart Windows before judging Code 10.'
+    if ($Machine.Firmware -eq 'BIOS') {
+        Write-Host 'Legacy BIOS audio repair completed. Shut Windows down fully, wait 20 seconds, then power the MacBook on before judging Code 10.'
+    } else {
+        Write-Host 'Audio repair staged with a higher ACPI table revision. Restart Windows before judging Code 10.'
+    }
 }
 
 function Test-BetterCampAudioDevice($Device) {

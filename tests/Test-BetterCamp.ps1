@@ -176,6 +176,23 @@ try {
     $script:nativeCalls = @()
     Assert-True (-not (Install-BetterCampAudioPatch -Machine ([pscustomobject]@{Model='MacBookPro9,2';Firmware='BIOS'}) -Root $root)) 'legacy BIOS skips UEFI patch'
     Assert-True ($script:nativeCalls.Count -eq 0) 'legacy BIOS changes nothing'
+    $script:nativeCalls = @()
+    $script:installerCode = 0
+    function Get-CimInstance {
+        @(
+            [pscustomobject]@{Name='High Definition Audio Controller';PNPDeviceID='PCI\VEN_8086&DEV_1E20&SUBSYS_72708086';ConfigManagerErrorCode=10},
+            [pscustomobject]@{Name='Ethernet Controller';PNPDeviceID='PCI\VEN_8086&DEV_1502';ConfigManagerErrorCode=10}
+        )
+    }
+    function Invoke-BetterCampNative {
+        param($FilePath, $Arguments)
+        $script:nativeCalls += [pscustomobject]@{FilePath=$FilePath;Arguments=($Arguments -join ' ')}
+        return [pscustomobject]@{ExitCode=0;Output='ok'}
+    }
+    Repair-BetterCampAudio -Path $pack -Machine ([pscustomobject]@{Model='MacBookPro9,2';Firmware='BIOS'}) -Root $root
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/remove-device PCI\VEN_8086&DEV_1E20*' }).Count -eq 1) 'legacy repair removes the failed Intel HDA controller for redetection'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -match 'DEV_1502' }).Count -eq 0) 'legacy repair leaves unrelated PCI devices untouched'
+    Remove-Item -Path Function:Get-CimInstance -Force
     function Confirm-SecureBootUEFI { return $true }
     Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'Secure Boot blocks audio patch'
 
