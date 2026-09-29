@@ -1,6 +1,6 @@
 # BetterCamp — MacBook Pro 2012 / Windows 11
 
-MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShellの1行または`Start-BetterCamp.cmd`でBoot Campドライバーのセットアップを開始する版です。Pythonのインストールは不要です。
+MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShellの1行または`Start-BetterCamp.cmd`で`MacBookPro9,2`用ドライバーとUEFI音声パッチを導入する版です。Pythonのインストールは不要です。
 
 [vinaypundith/bettercamp](https://github.com/vinaypundith/bettercamp) の2026-07-04時点の最新 `main`（`b2bd633675116ef489f8cd76ae82ba0fb22f8d16`）を基に改修しています。確認日: 2026-09-29。
 
@@ -9,10 +9,10 @@ MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShell�
 Windows 11でPowerShellを開き、次の1行を貼り付けてEnterを押します。リポジトリのZIP保存・展開は不要です。
 
 ```powershell
-irm https://raw.githubusercontent.com/snchngny/bettercamp/bea78ad008343870b5381a124296eea18b562ca1/run.ps1 | iex
+irm https://raw.githubusercontent.com/snchngny/bettercamp/6c76314aa88f53495f8af5b8ffb860dd27f425b7/run.ps1 | iex
 ```
 
-管理者権限を求めるWindowsの画面で「はい」を選び、Appleのインストーラーに従います。完了後にWindowsを再起動してください。
+管理者権限を求めるWindowsの画面で「はい」を選びます。必要なデバイスドライバーを順番に導入した後、Windowsを再起動してください。
 
 ブラウザーからファイルを手動ダウンロードしたくない、という意味での「ダウンロード不要」です。起動用ファイルは一時フォルダーへ自動取得して終了時に削除します。Boot Campドライバーが未導入なら、約925MBのApple公式パックの通信取得は必要です。インターネット通信も一切使えない場合は、後述のオフライン手順を使ってください。
 
@@ -26,12 +26,24 @@ PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダ
 
 | 機種ID | 主なモデル |
 | --- | --- |
-| MacBookPro9,1 | 15インチ Mid 2012 |
-| MacBookPro9,2 | 13インチ Mid 2012 |
-| MacBookPro10,1 | Retina 15インチ Mid 2012系 |
-| MacBookPro10,2 | Retina 13インチ Late 2012系 |
+| MacBookPro9,1 | 15インチ Mid 2012（診断のみ） |
+| MacBookPro9,2 | 13インチ Mid 2012（ドライバー・音声パッチ対応） |
+| MacBookPro10,1 | Retina 15インチ Mid 2012系（診断のみ） |
+| MacBookPro10,2 | Retina 13インチ Late 2012系（診断のみ） |
 
-64-bit Windows 11（build 22000以上）を確認してから起動します。10,1/10,2はEarly 2013でも使われる識別子のため、年式までは区別しません。ほかのMacや一般のPCではインストーラーを起動しません。
+64-bit Windows 11（build 22000以上）を確認してから起動します。ドライバーの自動導入と同梱DSDTは、元プロジェクトで実機確認された`MacBookPro9,2`だけに限定しています。ほかのMacや一般のPCではインストーラーを起動しません。
+
+## Boot Camp Managerを入れない理由
+
+通常の`BootCamp\setup.exe`はデバイスドライバーだけでなく、Boot Camp Manager、Boot Camp Control Panel、Apple Software Update、常駐処理もまとめて導入します。この版は`setup.exe`と`BootCamp.msi`を実行せず、`MacBookPro9,2`に必要なApple・Intel・Broadcom・Cirrusのドライバーインストーラーを1個ずつ順番に実行します。
+
+そのためBoot Camp Managerの常駐や古いApple Software Updateは追加されません。Boot Camp Control Panelが提供する起動ディスク切替なども入りません。macOSへの切替は起動時のOptionキーを使ってください。
+
+以前の版で一括セットアップを実行済みの場合、次の救済コマンドはBoot Camp Manager、Control Panel、Apple Software UpdateのMSIだけをアンインストールします。導入済みのデバイスドライバーと音声パッチは残します。
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/6c76314aa88f53495f8af5b8ffb860dd27f425b7/run.ps1))) -CleanupBootCamp
+```
 
 ## 手元のドライバー・最新版を使う
 
@@ -81,25 +93,38 @@ bettercamp-main/
 `MacBookPro9,2`をUEFI起動している場合、通常の1行起動で次も自動実行します。
 
 1. 同梱`asl.exe`と`dsdt_2012.aml`のSHA-256を検証
-2. `bcdedit`でWindowsのテスト署名モードを有効化
-3. Microsoft ASLの`/loadtable`で音声修正済みDSDTを登録
-4. Apple Boot Campドライバーを導入
+2. Windowsがファームウェア側より確実に新しい版として選べるOEM revisionのDSDTを生成し、ACPI checksumを再計算
+3. `bcdedit`でWindowsのテスト署名モードを有効化
+4. Microsoft ASLの`/loadtable`で音声修正済みDSDTを登録
+5. Boot Camp Managerを除外して個別デバイスドライバーを導入
 
 変更は再起動後に有効になります。テスト署名モードではデスクトップに「テスト モード」の表示が出ます。MicrosoftはACPIテーブル上書きを開発・テスト用とし、起動不能になる可能性を警告しています。実行前にWindows回復環境またはmacOSからWindowsボリュームへアクセスできる状態を用意してください。Secure Bootが有効な場合は適用を停止します。
 
 すでにBoot Campドライバーを導入済みで、音声パッチだけ適用する場合:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/bea78ad008343870b5381a124296eea18b562ca1/run.ps1))) -AudioPatchOnly
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/6c76314aa88f53495f8af5b8ffb860dd27f425b7/run.ps1))) -AudioPatchOnly
 ```
 
 元へ戻す場合。登録したDSDTを削除し、BetterCampが今回有効にした場合だけテスト署名モードも無効にします:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/bea78ad008343870b5381a124296eea18b562ca1/run.ps1))) -RemoveAudioPatch
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/6c76314aa88f53495f8af5b8ffb860dd27f425b7/run.ps1))) -RemoveAudioPatch
 ```
 
 `MacBookPro9,1`、`MacBookPro10,1`、`MacBookPro10,2`には同じDSDTを自動適用しません。元READMEでの2012年実機確認が`MacBookPro9,2`だけで、機種固有ACPIの横断利用を確認できないためです。`-Diagnose`で機種IDを確認できます。Boot Camp導入だけにする場合は`-SkipAudioPatch`を指定できます。
+
+### High Definition Audio Controllerがコード10の場合
+
+初期版は同梱DSDTを元のOEM revisionのまま登録していました。Microsoftの仕様では、レジストリから読み込むACPI tableはファームウェア内の同じtableより高いversionでなければ採用されません。ASLが登録成功を返しても、再起動時に置換DSDTが選ばれず、Intel High Definition Audio Controllerがコード10のまま残る場合があります。
+
+次の修復コマンドは、検証済みDSDTの処理内容を変えずOEM revisionとchecksumだけを更新して再登録し、`MacBookPro9,2`のCirrus CS4206ドライバーを入れ直してデバイスを再スキャンします。**完了後の再起動が必須です。**
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/6c76314aa88f53495f8af5b8ffb860dd27f425b7/run.ps1))) -RepairAudio
+```
+
+再起動後もコード10なら、デバイスマネージャーの対象デバイスで「詳細」→「ハードウェアID」を確認してください。`PCI\VEN_8086`ならCirrus endpointではなくIntel HDA controllerの初期化失敗です。`HDAUDIO\FUNC_01&VEN_1013&DEV_4206`ならCirrus CS4206です。別IDへ別機種用INFを強制適用しないでください。
 
 **旧 `bettercamp.py`、`bettercamp2.py`、`fix9400.py`、`bclaunch_test.ps1` は新しい起動入口ではありません。** 上流の履歴・素材として保持していますが、直接実行しないでください。
 
@@ -110,7 +135,10 @@ bettercamp-main/
 - 管理者昇格、空白・角括弧・アポストロフィを含むパス、終了コードを処理
 - `BootCamp.xml` をXMLとして読み、行番号に依存しないバージョン確認
 - Apple公式ZIPの取得、Appleのインストーラー署名確認、ログ保存
+- `BootCamp\setup.exe`、`BootCamp.msi`、Apple Software Updateを除外した`MacBookPro9,2`用個別ドライバー導入
 - `MacBookPro9,2` UEFI環境のテスト署名設定、DSDT音声パッチ、状態記録と復旧
+- ACPI overrideが採用される高いOEM revisionとchecksumの決定的生成、コード10修復入口
+- 既存Boot Camp Manager／Control Panel／Apple Software Updateだけを除去する救済入口
 - 複数のインストーラーを同時に起動せず、完了まで待機
 
 Windows PowerShell 5.1での回帰テスト:
@@ -123,7 +151,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Test-BetterCamp.
 
 ## 出典・既存手段との比較
 
-既存のAppleインストーラーを使い、独自ドライバーや配布基盤は追加していません。Boot Campアシスタントは最新の機種別パックの取得元として優先し、Windows側だけで起動できる入口をこの改修で補います。Brigadierによる動的取得も候補ですが、追加の実行ファイル・展開依存を増やさずに済むApple公式ZIPを予備の取得元としました。新しいドライバーを自作・更新したものではありません。
+Apple公式パック内の個別ドライバーインストーラーを使い、独自ドライバーや配布基盤は追加していません。Boot Campアシスタントは最新の機種別パックの取得元として優先し、Windows側だけで起動できる入口をこの改修で補います。Apple公式の通常手順は`setup.exe`による一括導入ですが、Windows 11上で旧Boot Camp Managerを常駐させないため、この版では採用していません。Brigadierによる動的取得も候補ですが、追加の実行ファイル・展開依存を増やさずに済むApple公式ZIPを予備の取得元としました。新しいドライバーを自作・更新したものではありません。
 
 - [Apple: Boot Camp 5.1.5621の対象機種・ダウンロード](https://support.apple.com/en-us/106412)
 - [Apple: Windowsサポートソフトウェアをダウンロード](https://support.apple.com/en-us/102465)
