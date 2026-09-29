@@ -154,10 +154,10 @@ try {
     Remove-Item -Path Function:Get-ChildItem -Force
     Remove-Item -Path Function:Get-ItemProperty -Force
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning on' }).Count -eq 1) 'test signing enabled'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v *dsdt_2012_override.aml' }).Count -eq 1) 'higher-revision DSDT loaded'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable*' }).Count -eq 0) 'acpitabl.dat path does not require an immediate ASL registry load'
     Remove-BetterCampAudioPatch -Machine $audioMachine -Root $root
     Assert-True (-not (Test-Path -LiteralPath $audioState.State)) 'audio patch state removed'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012_override.aml' }).Count -eq 1) 'DSDT override removed'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable*' }).Count -eq 0) 'acpitabl.dat-only state does not delete a nonexistent registry override'
     Assert-True (-not (Test-Path -LiteralPath $audioState.OverrideTable)) 'generated DSDT file removed'
     Assert-True (-not (Test-Path -LiteralPath $audioState.SystemTable)) 'acpitabl.dat boot override removed'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'test signing restored'
@@ -214,11 +214,11 @@ try {
         param($FilePath, $Arguments)
         $script:nativeCalls += [pscustomobject]@{FilePath=$FilePath;Arguments=($Arguments -join ' ')}
         if ($Arguments[0] -eq '/enum') { return [pscustomobject]@{ExitCode=0;Output="testsigning    No"} }
-        if ($FilePath -like '*asl.exe') { return [pscustomobject]@{ExitCode=5;Output='load failed'} }
+        if ($Arguments[0] -eq '/set') { return [pscustomobject]@{ExitCode=5;Output='set failed'} }
         return [pscustomobject]@{ExitCode=0;Output='ok'}
     }
-    Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'failed DSDT load is reported'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'failed load rolls back test signing'
+    Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'failed test-signing configuration is reported before installing acpitabl.dat'
+    Assert-True (-not (Test-Path -LiteralPath $audioState.SystemTable)) 'failed test-signing configuration leaves no boot table'
     $efiLoader = Get-BetterCampWindowsLoaderInfo "path                  \Windows\system32\winload.efi"
     $biosLoader = Get-BetterCampWindowsLoaderInfo "path                  \Windows\system32\winload.exe"
     Assert-True ($efiLoader.Firmware -eq 'UEFI' -and $efiLoader.Path -eq '\Windows\system32\winload.efi') 'UEFI loader parsed from localized BCD output'

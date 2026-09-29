@@ -314,7 +314,6 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
     if ($secureBootEnabled) { throw 'Secure Boot must be disabled before Windows can load an overridden ACPI table.' }
 
     $paths = Get-BetterCampAudioPatchPaths $Root
-    Assert-BetterCampFileHash $paths.Tool '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
     Assert-BetterCampFileHash $paths.Table '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
     $overrideHash = New-BetterCampAudioOverrideTable -Source $paths.Table -Destination $paths.OverrideTable
     if ($overrideHash -ne '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') {
@@ -353,17 +352,10 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
         if ($enabled.ExitCode -ne 0) { throw 'Could not enable Windows test-signing mode. Secure Boot or BitLocker policy may be blocking the change.' }
     }
 
-    $loaded = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', $paths.OverrideTable)
-    if ($loaded.ExitCode -ne 0) {
-        if ($testSigningBeforeThisRun -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
-        throw 'The MacBookPro9,2 ACPI audio table could not be loaded; the test-signing change was rolled back when possible.'
-    }
-
     try {
         if (-not $systemTableExisted) { Copy-Item -LiteralPath $paths.OverrideTable -Destination $paths.SystemTable }
         Assert-BetterCampFileHash $paths.SystemTable $overrideHash
     } catch {
-        Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.OverrideTable) | Out-Null
         if (-not $systemTableExisted -and (Test-Path -LiteralPath $paths.SystemTable)) { Remove-Item -LiteralPath $paths.SystemTable -Force }
         if ($testSigningBeforeThisRun -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
         throw "Could not install the Windows ACPI boot override: $($_.Exception.Message)"
@@ -382,18 +374,18 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
             TablePath = $paths.OverrideTable
             SystemTablePath = $paths.SystemTable
             SystemTableCreatedByBetterCamp = ($systemTableOwnedBefore -or (-not $systemTableExisted))
+            RegistryTableLoaded = $false
             OemRevision = '0x7FFFFFFF'
         } | ConvertTo-Json | Set-Content -LiteralPath $paths.State -Encoding UTF8
     } catch {
         $stateError = $_.Exception.Message
-        $tableRollback = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.OverrideTable)
         if (-not $systemTableExisted -and (Test-Path -LiteralPath $paths.SystemTable)) { Remove-Item -LiteralPath $paths.SystemTable -Force }
         $signingRollback = $null
         if ($testSigningBeforeThisRun -eq $false) {
             $signingRollback = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
         }
         if (Test-Path -LiteralPath $paths.State) { Remove-Item -LiteralPath $paths.State -Force }
-        $rollbackStatus = "table=$($tableRollback.ExitCode)"
+        $rollbackStatus = 'boot-table=removed'
         if ($null -ne $signingRollback) { $rollbackStatus += ", testsigning=$($signingRollback.ExitCode)" }
         throw "Could not save the audio patch recovery state ($stateError). Changes were rolled back where possible ($rollbackStatus)."
     }
@@ -569,9 +561,13 @@ function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
         $disabled = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
         if ($disabled.ExitCode -ne 0) { throw 'Windows test-signing mode could not be restored; the ACPI table was left unchanged.' }
     }
-    $removed = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $tableToRemove)
-    if ($removed.ExitCode -ne 0) { throw 'Test-signing mode was restored when applicable, but the ACPI audio table could not be removed.' }
-    if ($tableToRemove -ne $paths.Table) { Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table) | Out-Null }
+    $registryTableLoaded = $null -ne $state -and
+        ('RegistryTableLoaded' -notin $state.PSObject.Properties.Name -or [bool]$state.RegistryTableLoaded)
+    if ($registryTableLoaded) {
+        $removed = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $tableToRemove)
+        if ($removed.ExitCode -ne 0) { throw 'Test-signing mode was restored when applicable, but the legacy registry ACPI table could not be removed.' }
+        if ($tableToRemove -ne $paths.Table) { Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table) | Out-Null }
+    }
     if ($removeSystemTable) { Remove-Item -LiteralPath $paths.SystemTable -Force }
     if ($null -ne $state) { Remove-Item -LiteralPath $paths.State -Force }
     if (Test-Path -LiteralPath $paths.OverrideTable) { Remove-Item -LiteralPath $paths.OverrideTable -Force }

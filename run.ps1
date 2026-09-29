@@ -34,7 +34,7 @@ try {
     New-Item -ItemType Directory -Path $audioDirectory -Force | Out-Null
     $files = @(
         @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = '220D3099CDB435F343DA27BE2F7C6EB42D23A19EC13B4509994C45705B54DF37' },
-        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = '67103F72B7F55F02D9E481B3B1D916FAB6EB90066E2A03A18A5D16461A12068A' },
+        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = 'AE7F3A62435969A4BB38EEBFF5AF5383FA09305411BE49DCAF3A4EBAE98A2F87' },
         @{ Name = 'Audio_2011_2012/asl.exe'; Destination = (Join-Path $audioDirectory 'asl.exe'); Sha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' },
         @{ Name = 'Audio_2011_2012/dsdt_2012.aml'; Destination = (Join-Path $audioDirectory 'dsdt_2012.aml'); Sha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87' }
     )
