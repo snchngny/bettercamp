@@ -140,6 +140,13 @@ try {
     Assert-True ([BitConverter]::ToUInt32($overrideBytes, 24) -eq 0x7FFFFFFF) 'DSDT OEM revision is higher than firmware table'
     Assert-True (((($overrideBytes | Measure-Object -Sum).Sum) -band 0xFF) -eq 0) 'generated DSDT checksum valid'
     Assert-True ((Get-FileHash -LiteralPath $audioState.SystemTable -Algorithm SHA256).Hash -eq '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') 'acpitabl.dat boot override installed'
+    $script:activeDsdtBytes = $overrideBytes
+    function Get-ChildItem { [pscustomobject]@{PSChildName='7FFFFFFF';PSPath='Registry::fixture'} }
+    function Get-ItemProperty { [pscustomobject]@{'00000000'=$script:activeDsdtBytes} }
+    $activeDsdt = @(Get-BetterCampActiveDsdtInfo)
+    Assert-True ($activeDsdt.Count -eq 1 -and $activeDsdt[0].Revision -eq '0x7FFFFFFF' -and $activeDsdt[0].Sha256 -eq '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') 'active Windows DSDT is read and hashed from the ACPI registry'
+    Remove-Item -Path Function:Get-ChildItem -Force
+    Remove-Item -Path Function:Get-ItemProperty -Force
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning on' }).Count -eq 1) 'test signing enabled'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v *dsdt_2012_override.aml' }).Count -eq 1) 'higher-revision DSDT loaded'
     Remove-BetterCampAudioPatch -Machine $audioMachine -Root $root

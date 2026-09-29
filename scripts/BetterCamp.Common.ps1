@@ -401,6 +401,30 @@ function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
     Write-Host 'Audio repair staged with a higher ACPI table revision. Restart Windows before judging Code 10.'
 }
 
+function Get-BetterCampActiveDsdtInfo {
+    $registryRoot = 'Registry::HKEY_LOCAL_MACHINE\HARDWARE\ACPI\DSDT'
+    $tables = @()
+    foreach ($key in @(Get-ChildItem -LiteralPath $registryRoot -Recurse -ErrorAction SilentlyContinue)) {
+        $revisionProperty = $key.PSObject.Properties['PSChildName']
+        if ($null -eq $revisionProperty -or [string]$revisionProperty.Value -notmatch '^[0-9A-Fa-f]{8}$') { continue }
+        try { $values = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction Stop } catch { continue }
+        $binaryProperty = $values.PSObject.Properties['00000000']
+        if ($null -eq $binaryProperty -or $binaryProperty.Value -isnot [byte[]]) { continue }
+        $bytes = [byte[]]$binaryProperty.Value
+        if ($bytes.Length -lt 36 -or [Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ne 'DSDT') { continue }
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $hash = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '') }
+        finally { $sha.Dispose() }
+        $tables += [pscustomobject]@{
+            Revision = '0x' + ([string]$revisionProperty.Value).ToUpperInvariant()
+            OemId = [Text.Encoding]::ASCII.GetString($bytes, 10, 6).Trim()
+            OemTableId = [Text.Encoding]::ASCII.GetString($bytes, 16, 8).Trim()
+            Sha256 = $hash
+        }
+    }
+    return @($tables | Sort-Object Revision -Unique)
+}
+
 function Show-BetterCampAudioDiagnosis([string]$Root) {
     $paths = Get-BetterCampAudioPatchPaths $Root
     if (Test-Path -LiteralPath $paths.State) {
@@ -409,6 +433,23 @@ function Show-BetterCampAudioDiagnosis([string]$Root) {
             Write-Host "Audio patch state: applied $($state.AppliedAt), table revision $($state.OemRevision)"
         } catch { Write-Warning 'Audio patch state exists but cannot be read.' }
     } else { Write-Host 'Audio patch state: not installed by this BetterCamp version' }
+    $expectedOverrideHash = '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D'
+    if (Test-Path -LiteralPath $paths.SystemTable -PathType Leaf) {
+        $systemTableHash = (Get-FileHash -LiteralPath $paths.SystemTable -Algorithm SHA256).Hash
+        $systemTableStatus = if ($systemTableHash -eq $expectedOverrideHash) { 'verified BetterCamp table' } else { 'different table' }
+        Write-Host "Windows ACPI boot file: $systemTableStatus | $systemTableHash"
+    } else {
+        Write-Host 'Windows ACPI boot file: missing'
+    }
+    $activeTables = @(Get-BetterCampActiveDsdtInfo)
+    if ($activeTables.Count -eq 0) {
+        Write-Warning 'Windows did not expose an active DSDT through the ACPI registry.'
+    } else {
+        foreach ($table in $activeTables) {
+            $activeStatus = if ($table.Sha256 -eq $expectedOverrideHash) { 'active BetterCamp override' } else { 'firmware or other table' }
+            Write-Host "Active DSDT: $activeStatus | revision $($table.Revision) | $($table.OemId)/$($table.OemTableId) | $($table.Sha256)"
+        }
+    }
     $boot = Invoke-BetterCampNative 'bcdedit.exe' @('/enum', '{current}')
     $testSigning = [regex]::Match($boot.Output, '(?im)^testsigning\s+(.+?)\s*$')
     if ($testSigning.Success) { Write-Host "Windows test signing: $($testSigning.Groups[1].Value)" }
