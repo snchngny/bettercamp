@@ -1,4 +1,4 @@
-# BetterCamp — MacBook Pro 2012 / Windows 11
+# BetterCamp — MacBook Pro 2012・Mac mini 2018 / Windows 11
 
 MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShellの1行または`Start-BetterCamp.cmd`で`MacBookPro9,2`用ドライバーとUEFI音声パッチを導入する版です。Pythonのインストールは不要です。
 
@@ -30,8 +30,19 @@ PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダ
 | MacBookPro9,2 | 13インチ Mid 2012（ドライバー・音声パッチ対応） |
 | MacBookPro10,1 | Retina 15インチ Mid 2012系（診断のみ） |
 | MacBookPro10,2 | Retina 13インチ Late 2012系（診断のみ） |
+| Macmini8,1 | Mac mini 2018（内蔵Bluetoothコード10修復のみ） |
 
 64-bit Windows 11（build 22000以上）を確認してから起動します。ドライバーの自動導入と同梱DSDTは、元プロジェクトで実機確認された`MacBookPro9,2`だけに限定しています。ほかのMacや一般のPCではインストーラーを起動しません。
+
+## Mac mini 2018の内蔵Bluetooth修復
+
+`Macmini8,1`で`Broadcom Serial Bus Driver over UART Bus Enumerator`（`ACPI\BCM2E7C\1`）がコード10になり、Bluetoothデバイスが表示されない場合だけ使います。最初にデバイス再起動を試し、直らない場合は使用中のBroadcom `12.0.1.879`をバックアップして、Windows Driver Storeに既に保存されている`12.0.1.874`へ戻します。対象機種、Hardware ID、使用中ドライバー、代替ドライバーが一致しなければ変更しません。
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1))) -RepairBluetooth
+```
+
+管理者権限を求める画面で「はい」を選びます。即時復帰しない場合はWindowsを完全にシャットダウンし、20秒待ってからMac miniの電源を入れてください。バックアップと修復状態は`%LOCALAPPDATA%\BetterCamp\backups`へ保存します。MacBook Pro用のDSDT、テスト署名、Cirrusドライバー、Boot Camp Managerには触れません。
 
 ## Boot Camp Managerを入れない理由
 

@@ -6,6 +6,7 @@ param(
     [switch]$DownloadOnly,
     [switch]$AudioPatchOnly,
     [switch]$RepairAudio,
+    [switch]$RepairBluetooth,
     [switch]$RemoveAudioPatch,
     [switch]$CleanupBootCamp,
     [switch]$SkipAudioPatch
@@ -17,8 +18,8 @@ try {
     $machine = Get-BetterCampMachine
     Write-Host "Model: $($machine.Model) | Windows build: $($machine.Build) | Firmware: $($machine.Firmware)"
     Write-Host "Graphics: $($machine.Graphics -join ', ')"
-    Assert-BetterCampMachine $machine
-    $operationCount = @($Diagnose, $DownloadOnly, $AudioPatchOnly, $RepairAudio, $RemoveAudioPatch, $CleanupBootCamp).Where({ $_ }).Count
+    Assert-BetterCampMachine $machine -AllowMacmini81:$RepairBluetooth
+    $operationCount = @($Diagnose, $DownloadOnly, $AudioPatchOnly, $RepairAudio, $RepairBluetooth, $RemoveAudioPatch, $CleanupBootCamp).Where({ $_ }).Count
     if ($operationCount -gt 1) { throw 'Choose only one operation mode.' }
     if ($Diagnose) {
         Show-BetterCampAudioDiagnosis -Root $PSScriptRoot -Machine $machine
@@ -31,6 +32,7 @@ try {
         if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-BetterCampLiteral $BootCampPath) }
         if ($AudioPatchOnly) { $command += ' -AudioPatchOnly' }
         if ($RepairAudio) { $command += ' -RepairAudio' }
+        if ($RepairBluetooth) { $command += ' -RepairBluetooth' }
         if ($RemoveAudioPatch) { $command += ' -RemoveAudioPatch' }
         if ($CleanupBootCamp) { $command += ' -CleanupBootCamp' }
         if ($SkipAudioPatch) { $command += ' -SkipAudioPatch' }
@@ -44,7 +46,9 @@ try {
     $log = Join-Path $logRoot ('setup-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.txt')
     Start-Transcript -LiteralPath $log | Out-Null
     try {
-        if ($RemoveAudioPatch) {
+        if ($RepairBluetooth) {
+            Repair-BetterCampMacminiBluetooth -Machine $machine | Out-Null
+        } elseif ($RemoveAudioPatch) {
             Remove-BetterCampAudioPatch -Machine $machine -Root $PSScriptRoot
         } elseif ($CleanupBootCamp) {
             Remove-BetterCampSoftware

@@ -18,6 +18,9 @@ foreach ($model in @('MacBookPro9,1', 'MacBookPro9,2', 'MacBookPro10,1', 'MacBoo
     Assert-BetterCampMachine ([pscustomobject]@{Model=$model;Build=26100;Is64Bit=$true})
     $script:count++
 }
+Assert-BetterCampMachine ([pscustomobject]@{Model='Macmini8,1';Build=26100;Is64Bit=$true}) -AllowMacmini81
+$script:count++
+Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='Macmini8,1';Build=26100;Is64Bit=$true}) } 'Macmini8,1 requires the dedicated repair mode'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro8,1';Build=26100;Is64Bit=$true}) } 'wrong model'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro9,2';Build=19045;Is64Bit=$true}) } 'Windows 10'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro9,2';Build=26100;Is64Bit=$false}) } '32-bit OS'
@@ -123,6 +126,43 @@ try {
     Assert-True (@($script:removedProducts | Where-Object { $_ -match '/x \{FA2B2C2A-.* /passive .* /L\*v ' }).Count -eq 1) 'Boot Camp Services removed by product code with MSI log'
     Assert-True ($script:driverCalls.Count -eq 33) 'software cleanup does not remove device drivers'
     Set-Item -Path Function:Find-BetterCampCachedPackage -Value $originalFindCachedPackage
+
+    # Macmini8,1 Bluetooth repair backs up only the active failed package and falls back to 12.0.1.874.
+    $oldBluetoothLocalAppData = $env:LOCALAPPDATA
+    $env:LOCALAPPDATA = Join-Path $temporary 'bluetooth state'
+    $script:bluetoothCode = 10
+    $script:bluetoothVersion = '12.0.1.879'
+    $script:bluetoothCalls = @()
+    function Get-CimInstance {
+        param($ClassName)
+        if ($ClassName -eq 'Win32_PnPEntity') {
+            return [pscustomobject]@{Name='Broadcom Serial Bus Driver over UART Bus Enumerator';PNPDeviceID='ACPI\BCM2E7C\1';ConfigManagerErrorCode=$script:bluetoothCode}
+        }
+        if ($ClassName -eq 'Win32_PnPSignedDriver') {
+            $inf = if ($script:bluetoothVersion -eq '12.0.1.879') { 'oem23.inf' } else { 'oem26.inf' }
+            return [pscustomobject]@{DeviceID='ACPI\BCM2E7C\1';DriverVersion=$script:bluetoothVersion;InfName=$inf}
+        }
+        throw "Unexpected CIM query: $ClassName"
+    }
+    function Get-WindowsDriver {
+        param([switch]$Online, [switch]$All)
+        return [pscustomobject]@{OriginalFileName='C:\Windows\System32\DriverStore\FileRepository\btwserialbus-dev.inf';Version='12.0.1.874';Driver='oem26.inf'}
+    }
+    function Start-Sleep { param($Seconds) }
+    function Invoke-BetterCampNative {
+        param($FilePath, $Arguments)
+        $script:bluetoothCalls += ($Arguments -join ' ')
+        if ($Arguments[0] -eq '/delete-driver') { $script:bluetoothVersion = '12.0.1.874' }
+        if ($Arguments[0] -eq '/scan-devices') { $script:bluetoothCode = 0 }
+        return [pscustomobject]@{ExitCode=0;Output='ok'}
+    }
+    Assert-True (Repair-BetterCampMacminiBluetooth ([pscustomobject]@{Model='Macmini8,1'})) 'Macmini8,1 Bluetooth fallback succeeds'
+    Assert-True (@($script:bluetoothCalls | Where-Object { $_ -like '/export-driver oem23.inf*' }).Count -eq 1) 'failed Broadcom package backed up before removal'
+    Assert-True (@($script:bluetoothCalls | Where-Object { $_ -eq '/delete-driver oem23.inf /uninstall /force' }).Count -eq 1) 'only the verified failed Broadcom package removed'
+    Assert-True (@($script:bluetoothCalls | Where-Object { $_ -eq '/scan-devices' }).Count -eq 1) 'devices rescanned after fallback'
+    Assert-Throws { Repair-BetterCampMacminiBluetooth ([pscustomobject]@{Model='MacBookPro9,2'}) } 'Bluetooth repair blocked on other models'
+    Remove-Item -Path Function:Get-CimInstance,Function:Get-WindowsDriver,Function:Start-Sleep -Force
+    $env:LOCALAPPDATA = $oldBluetoothLocalAppData
 
     # MacBookPro9,2 UEFI audio patch: enable, load, record state, and fully revert.
     $oldAudioLocalAppData = $env:LOCALAPPDATA
