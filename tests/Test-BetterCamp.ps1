@@ -54,18 +54,50 @@ try {
     $script:signature = [pscustomobject]@{Status='NotSigned';SignerCertificate=$null}
     Assert-Throws { Assert-BetterCampSignature 'unsigned.exe' } 'unsigned installer'
 
+    $driverPaths = @(Get-BetterCampDriverInstallers ([pscustomobject]@{Model='MacBookPro9,2'}))
+    Assert-True ($driverPaths.Count -eq 16) 'MacBookPro9,2 driver-only package count'
+    Assert-True ('Apple\BootCamp.msi' -notin $driverPaths) 'Boot Camp Manager package excluded'
+    Assert-True ('Apple\AppleSoftwareUpdate.msi' -notin $driverPaths) 'Apple Software Update package excluded'
+    Assert-Throws { Get-BetterCampDriverInstallers ([pscustomobject]@{Model='MacBookPro9,1'}) } 'unverified model blocked from driver-only install'
+    foreach ($relativePath in $driverPaths) {
+        $fixture = Join-Path (Join-Path $pack 'Drivers') $relativePath
+        New-Item -ItemType Directory -Path (Split-Path $fixture -Parent) -Force | Out-Null
+        Set-Content -LiteralPath $fixture -Value 'driver fixture, never execute'
+    }
+    function Assert-BetterCampDriverHash { param($Path, $ExpectedHash, $Label) }
+    $script:driverCalls = @()
     function Start-Process {
         param($FilePath, $WorkingDirectory, [switch]$Wait, [switch]$PassThru)
-        Assert-True ($FilePath -eq (Join-Path $pack 'setup.exe')) 'installer path preserved'
-        Assert-True ($WorkingDirectory -eq $pack -and $Wait -and $PassThru) 'wait and working directory'
+        $script:driverCalls += $FilePath
+        Assert-True ($WorkingDirectory -eq (Split-Path $FilePath -Parent) -and $Wait -and $PassThru) 'driver wait and working directory'
         return [pscustomobject]@{ExitCode=$script:installerCode}
     }
-    foreach ($code in @(0, 1641, 3010)) {
-        $script:installerCode = $code
-        Assert-True ((Install-BetterCampPackage $pack) -eq $code) "installer exit $code"
-    }
+    $script:installerCode = 0
+    $driverResult = Install-BetterCampDrivers -Path $pack -Machine ([pscustomobject]@{Model='MacBookPro9,2'})
+    Assert-True ($driverResult.Count -eq 16 -and $script:driverCalls.Count -eq 16) 'all individual driver packages executed'
+    Assert-True (-not $driverResult.RestartRequired) 'driver exit zero needs normal restart only'
+    $script:installerCode = 3010
+    $driverResult = Install-BetterCampDrivers -Path $pack -Machine ([pscustomobject]@{Model='MacBookPro9,2'})
+    Assert-True $driverResult.RestartRequired 'driver restart exit propagated'
     $script:installerCode = 1603
-    Assert-Throws { Install-BetterCampPackage $pack } 'installer failure propagated'
+    Assert-Throws { Install-BetterCampDrivers -Path $pack -Machine ([pscustomobject]@{Model='MacBookPro9,2'}) } 'individual driver failure propagated'
+
+    $script:removedProducts = @()
+    function Get-BetterCampInstalledSoftware {
+        return @(
+            [pscustomobject]@{DisplayName='Boot Camp Services';PSChildName='{FA2B2C2A-EA41-495A-9308-60726125D562}'},
+            [pscustomobject]@{DisplayName='Apple Software Update';PSChildName='{12345678-1234-1234-1234-123456789ABC}'}
+        )
+    }
+    function Invoke-BetterCampNative {
+        param($FilePath, $Arguments)
+        $script:removedProducts += ($Arguments -join ' ')
+        return [pscustomobject]@{ExitCode=0;Output='ok'}
+    }
+    Remove-BetterCampSoftware
+    Assert-True ($script:removedProducts.Count -eq 2) 'Boot Camp software cleanup removes two MSI products'
+    Assert-True (@($script:removedProducts | Where-Object { $_ -match '/x \{FA2B2C2A-' }).Count -eq 1) 'Boot Camp Services removed by product code'
+    Assert-True ($script:driverCalls.Count -eq 33) 'software cleanup does not remove device drivers'
 
     # MacBookPro9,2 UEFI audio patch: enable, load, record state, and fully revert.
     $oldAudioLocalAppData = $env:LOCALAPPDATA
@@ -82,11 +114,16 @@ try {
     Assert-True (Install-BetterCampAudioPatch -Machine $audioMachine -Root $root) 'audio patch applied'
     $audioState = Get-BetterCampAudioPatchPaths $root
     Assert-True (Test-Path -LiteralPath $audioState.State) 'audio patch state recorded'
+    Assert-True ((Get-FileHash -LiteralPath $audioState.OverrideTable -Algorithm SHA256).Hash -eq '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') 'higher-revision DSDT generated deterministically'
+    $overrideBytes = [IO.File]::ReadAllBytes($audioState.OverrideTable)
+    Assert-True ([BitConverter]::ToUInt32($overrideBytes, 24) -eq 0x7FFFFFFF) 'DSDT OEM revision is higher than firmware table'
+    Assert-True (((($overrideBytes | Measure-Object -Sum).Sum) -band 0xFF) -eq 0) 'generated DSDT checksum valid'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning on' }).Count -eq 1) 'test signing enabled'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v *dsdt_2012.aml' }).Count -eq 1) 'DSDT loaded'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v *dsdt_2012_override.aml' }).Count -eq 1) 'higher-revision DSDT loaded'
     Remove-BetterCampAudioPatch -Machine $audioMachine -Root $root
     Assert-True (-not (Test-Path -LiteralPath $audioState.State)) 'audio patch state removed'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012.aml' }).Count -eq 1) 'DSDT override removed'
+    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012_override.aml' }).Count -eq 1) 'DSDT override removed'
+    Assert-True (-not (Test-Path -LiteralPath $audioState.OverrideTable)) 'generated DSDT file removed'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'test signing restored'
 
     New-Item -ItemType Directory -Path (Split-Path $audioState.State -Parent) -Force | Out-Null
@@ -101,8 +138,7 @@ try {
     $env:LOCALAPPDATA = $stateBlocker
     $script:nativeCalls = @()
     Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'state write failure reported'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012.aml' }).Count -eq 1) 'state failure removes DSDT override'
-    Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'state failure restores test signing'
+    Assert-True ($script:nativeCalls.Count -eq 0) 'table generation failure changes no boot or ACPI settings'
     $env:LOCALAPPDATA = Join-Path $temporary 'audio state'
 
     Assert-Throws { Install-BetterCampAudioPatch -Machine ([pscustomobject]@{Model='MacBookPro9,1';Firmware='UEFI'}) -Root $root } 'audio table blocked on unverified model'
@@ -139,6 +175,7 @@ try {
             'Win32_ComputerSystemProduct' { [pscustomobject]@{Name='MacBookPro9,2'} }
             'Win32_OperatingSystem' { [pscustomobject]@{BuildNumber='26100'} }
             'Win32_VideoController' { [pscustomobject]@{Name='Intel HD Graphics 4000'} }
+            'Win32_PnPEntity' { [pscustomobject]@{Name='High Definition Audio Controller';PNPDeviceID='PCI\VEN_8086&DEV_1E20';ConfigManagerErrorCode=10} }
             default { throw "Unexpected CIM query: $ClassName" }
         }
     }
@@ -168,6 +205,8 @@ try {
         Assert-True ($LASTEXITCODE -eq 0) 'download-only extracts without elevation or installer'
         $downloaded = @(Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Filter BootCamp.xml -Recurse)
         Assert-True ($downloaded.Count -eq 1) 'one extracted package'
+        Assert-True ((Find-BetterCampCachedPackage) -eq $downloaded[0].DirectoryName) 'cached package found for repair reuse'
+        Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA 'BetterCamp/downloads') -Recurse -Force
         function Invoke-WebRequest { throw 'Simulated network failure' }
         & (Join-Path $root 'bettercamp.ps1') -DownloadOnly
         Assert-True ($LASTEXITCODE -eq 1) 'network failure propagated'

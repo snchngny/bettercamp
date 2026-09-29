@@ -5,7 +5,9 @@ param(
     [switch]$Diagnose,
     [switch]$DownloadOnly,
     [switch]$AudioPatchOnly,
+    [switch]$RepairAudio,
     [switch]$RemoveAudioPatch,
+    [switch]$CleanupBootCamp,
     [switch]$SkipAudioPatch
 )
 $ErrorActionPreference = 'Stop'
@@ -16,9 +18,10 @@ try {
     Write-Host "Model: $($machine.Model) | Windows build: $($machine.Build) | Firmware: $($machine.Firmware)"
     Write-Host "Graphics: $($machine.Graphics -join ', ')"
     Assert-BetterCampMachine $machine
-    $operationCount = @($Diagnose, $DownloadOnly, $AudioPatchOnly, $RemoveAudioPatch).Where({ $_ }).Count
-    if ($operationCount -gt 1) { throw 'Choose only one of -Diagnose, -DownloadOnly, -AudioPatchOnly or -RemoveAudioPatch.' }
+    $operationCount = @($Diagnose, $DownloadOnly, $AudioPatchOnly, $RepairAudio, $RemoveAudioPatch, $CleanupBootCamp).Where({ $_ }).Count
+    if ($operationCount -gt 1) { throw 'Choose only one operation mode.' }
     if ($Diagnose) {
+        Show-BetterCampAudioDiagnosis -Root $PSScriptRoot
         Write-Host 'Target recognized. Diagnosis complete; no drivers or boot settings were changed.'
         exit 0
     }
@@ -27,7 +30,9 @@ try {
         $command = '& ' + (ConvertTo-BetterCampLiteral $PSCommandPath)
         if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-BetterCampLiteral $BootCampPath) }
         if ($AudioPatchOnly) { $command += ' -AudioPatchOnly' }
+        if ($RepairAudio) { $command += ' -RepairAudio' }
         if ($RemoveAudioPatch) { $command += ' -RemoveAudioPatch' }
+        if ($CleanupBootCamp) { $command += ' -CleanupBootCamp' }
         if ($SkipAudioPatch) { $command += ' -SkipAudioPatch' }
         $command += '; exit $LASTEXITCODE'
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
@@ -41,10 +46,16 @@ try {
     try {
         if ($RemoveAudioPatch) {
             Remove-BetterCampAudioPatch -Machine $machine -Root $PSScriptRoot
+        } elseif ($CleanupBootCamp) {
+            Remove-BetterCampSoftware
         } elseif ($AudioPatchOnly) {
             Install-BetterCampAudioPatch -Machine $machine -Root $PSScriptRoot | Out-Null
         } else {
             $pack = Resolve-BetterCampPath -Path $BootCampPath -Root $PSScriptRoot
+            if (-not $pack) {
+                $pack = Find-BetterCampCachedPackage
+                if ($pack) { Write-Host "Using cached Apple driver package: $pack" }
+            }
             if (-not $pack) {
                 Write-Host 'Downloading Apple Boot Camp 5.1.5621 (about 925 MB).'
                 Write-Host 'This is an archived 2012-compatible package, not the latest Boot Camp release.'
@@ -52,10 +63,12 @@ try {
             }
             $version = Get-BetterCampVersion $pack
             Write-Host "Boot Camp $version : $pack"
-            if ($version -lt [version]'5.1') { throw 'Use Boot Camp 5.1.5621 or newer support software for this Mac from Boot Camp Assistant.' }
+            if ($version -ne [version]'5.1.5621') { throw 'Driver-only installation currently requires the verified MacBookPro9,2 Boot Camp 5.1.5621 package.' }
             Assert-BetterCampSignature (Join-Path $pack 'setup.exe')
             if ($DownloadOnly) {
                 Write-Host "Download verified. To install later: .\Start-BetterCamp.cmd -BootCampPath `"$pack`""
+            } elseif ($RepairAudio) {
+                Repair-BetterCampAudio -Path $pack -Machine $machine -Root $PSScriptRoot
             } else {
                 if (-not $SkipAudioPatch -and $machine.Firmware -eq 'UEFI') {
                     if ($machine.Model -eq 'MacBookPro9,2') {
@@ -64,10 +77,9 @@ try {
                         Write-Warning "The bundled audio table is not verified for $($machine.Model); the UEFI audio patch was not applied."
                     }
                 }
-                Write-Host 'The Apple installer will open. Follow its prompts. Windows 11 is not officially supported by Apple on this Mac.'
-                $code = Install-BetterCampPackage $pack
-                if ($code -in @(1641, 3010)) { Write-Host 'Installation succeeded; restart Windows when ready.' }
-                else { Write-Host 'Installer completed. Restart Windows, then check sound, Wi-Fi and keyboard controls.' }
+                Write-Host 'Installing the MacBookPro9,2 device drivers individually. Boot Camp Manager, Control Panel and Apple Software Update will not be installed.'
+                $result = Install-BetterCampDrivers -Path $pack -Machine $machine
+                Write-Host "$($result.Count) driver packages completed. Restart Windows, then check sound, Wi-Fi, trackpad and keyboard controls."
             }
         }
     } catch {

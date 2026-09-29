@@ -94,10 +94,115 @@ function Get-BetterCampPackage {
     return $matches[0].DirectoryName
 }
 
-function Install-BetterCampPackage([string]$Path) {
-    $process = Start-Process -FilePath (Join-Path $Path 'setup.exe') -WorkingDirectory $Path -Wait -PassThru
-    if ($process.ExitCode -notin @(0, 1641, 3010)) { throw "Apple installer returned exit code $($process.ExitCode). See the installer message and log." }
-    return $process.ExitCode
+function Find-BetterCampCachedPackage {
+    $cache = Join-Path $env:LOCALAPPDATA 'BetterCamp/downloads'
+    if (-not (Test-Path -LiteralPath $cache -PathType Container)) { return $null }
+    $matches = @(Get-ChildItem -LiteralPath $cache -Filter BootCamp.xml -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.DirectoryName 'setup.exe') -PathType Leaf } |
+        Sort-Object LastWriteTimeUtc -Descending)
+    if ($matches.Count -eq 0) { return $null }
+    return $matches[0].DirectoryName
+}
+
+function Get-BetterCampDriverInstallers($Machine) {
+    if ($Machine.Model -ne 'MacBookPro9,2') {
+        throw "Driver-only installation is currently verified only for MacBookPro9,2; detected $($Machine.Model)."
+    }
+    return @(
+        'Intel\Chipset\Setup.exe',
+        'Intel\IntelMgmtEngine.exe',
+        'Intel\IntelxHCISetup.exe',
+        'Intel\IntelHDLegacyGraphics64.exe',
+        'Cirrus\CirrusAudioCS4206x64.exe',
+        'Broadcom\BroadcomWirelessWin8x64.exe',
+        'Broadcom\BroadcomEthernet64.exe',
+        'Broadcom\BroadcomCardReader64.exe',
+        'Apple\AppleBluetoothInstaller64.exe',
+        'Apple\AppleCamera64.exe',
+        'Apple\AppleDisplayInstaller64.exe',
+        'Apple\AppleKeyboardInstaller64.exe',
+        'Apple\AppleMultiTouchTrackPadInstaller64.exe',
+        'Apple\AppleODDInstaller64.exe',
+        'Apple\AppleNullDriver64.exe',
+        'Apple\NullSystemDevice64.exe'
+    )
+}
+
+function Get-BetterCampDriverHashes {
+    return @{
+        'Intel\Chipset\Setup.exe' = 'E341B83C11EA306ADED5F26B849BFEFBFC9152D3B1DDCA1254BE184E858C699F'
+        'Intel\IntelMgmtEngine.exe' = '5DDFFE10CEF05BFFA510B42B18CC21AC148D63DF7A382E196AD36E76F17D06D1'
+        'Intel\IntelxHCISetup.exe' = '60C66E9A06D0903452CCF31B7801770E4FCACAF26D83A67786D0318D43A1971A'
+        'Intel\IntelHDLegacyGraphics64.exe' = 'AE590BAC3897E51E438B86BF1899E15E56FCF9784F8F2CCC69F45E59489E6FFC'
+        'Cirrus\CirrusAudioCS4206x64.exe' = 'FC7751A5302CE8764C2D4D0E6F7D51AC74FD0B3246E1500DEAD6911330E0CDFE'
+        'Broadcom\BroadcomWirelessWin8x64.exe' = '4AE62D4A8219C789B51DF1B7F5EA53ABDEA9E79782F5D8F1FB97D45A6909CBE3'
+        'Broadcom\BroadcomEthernet64.exe' = '51AC0B72E27E9126807AB52464760296BC64D23C2D00694DDA41DBA789D05999'
+        'Broadcom\BroadcomCardReader64.exe' = '9D909BA51FF5D487A2C6DF0244EF8FFB56263C6A653731E83FADE7B7ED5BF5D4'
+        'Apple\AppleBluetoothInstaller64.exe' = '0730AB8A03C3E63D58A4CF4A23D9012986CEB443A58C7E7F4379C3F0FFEFA561'
+        'Apple\AppleCamera64.exe' = 'C1880ABEE6615E884731EA14AF096B92693DE77A95AACE567AD456BC7FA5D321'
+        'Apple\AppleDisplayInstaller64.exe' = '9214949F7620C3324AB2175EE3DA68EB3DFFB4F69914C737403F30A2C67DC063'
+        'Apple\AppleKeyboardInstaller64.exe' = 'D17B4DDE778B8F63E8A9C5D9920DEC9CCFB4FCA3764FF4BAEB529CB68F0865BA'
+        'Apple\AppleMultiTouchTrackPadInstaller64.exe' = 'C71F8037A0AF37418F399B9695D9DDAFCC0F736E2DA27148DD5381E3EBEFC7EE'
+        'Apple\AppleODDInstaller64.exe' = '8DE05501A84C7A505EBF1C72A04EA2E1A35C8AF43501D5E6BCA8FBBC5CFD1F26'
+        'Apple\AppleNullDriver64.exe' = 'DD028EA463CC28BFF7F85DC648748E1289E1A6D775F4C88C64037AD435B689BF'
+        'Apple\NullSystemDevice64.exe' = 'B2984F788525338CFE8EC7EF2A926C53F7900041129A87920E08890A3DD76224'
+    }
+}
+
+function Assert-BetterCampDriverHash([string]$Path, [string]$ExpectedHash, [string]$Label) {
+    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $ExpectedHash) {
+        throw "Driver verification failed: $Label"
+    }
+}
+
+function Install-BetterCampDrivers([string]$Path, $Machine) {
+    $driversRoot = Join-Path $Path 'Drivers'
+    $installers = @(Get-BetterCampDriverInstallers $Machine)
+    $hashes = Get-BetterCampDriverHashes
+    foreach ($relativePath in $installers) {
+        $installer = Join-Path $driversRoot $relativePath
+        if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Required MacBookPro9,2 driver installer not found: $relativePath"
+        }
+        Assert-BetterCampDriverHash -Path $installer -ExpectedHash $hashes[$relativePath] -Label $relativePath
+    }
+    $restartRequired = $false
+    foreach ($relativePath in $installers) {
+        $installer = Join-Path $driversRoot $relativePath
+        Write-Host "Installing driver: $relativePath"
+        $process = Start-Process -FilePath $installer -WorkingDirectory (Split-Path $installer -Parent) -Wait -PassThru
+        if ($process.ExitCode -notin @(0, 1641, 3010)) {
+            throw "Driver installer failed: $relativePath (exit $($process.ExitCode))."
+        }
+        if ($process.ExitCode -in @(1641, 3010)) { $restartRequired = $true }
+    }
+    return [pscustomobject]@{ Count = $installers.Count; RestartRequired = $restartRequired }
+}
+
+function Get-BetterCampInstalledSoftware([string[]]$Names) {
+    $roots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    return @(Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -in $Names -and $_.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$' } |
+        Sort-Object PSChildName -Unique)
+}
+
+function Remove-BetterCampSoftware {
+    $products = @(Get-BetterCampInstalledSoftware @('Boot Camp', 'Boot Camp Services', 'Apple Software Update'))
+    if ($products.Count -eq 0) {
+        Write-Host 'Boot Camp Manager and Apple Software Update are not registered as installed.'
+        return
+    }
+    foreach ($product in $products) {
+        Write-Host "Removing software while preserving device drivers: $($product.DisplayName)"
+        $result = Invoke-BetterCampNative 'msiexec.exe' @('/x', $product.PSChildName, '/qn', '/norestart')
+        if ($result.ExitCode -notin @(0, 1605, 1614, 1641, 3010)) {
+            throw "Could not remove $($product.DisplayName) (exit $($result.ExitCode))."
+        }
+    }
+    Write-Host 'Boot Camp Manager, Control Panel and Apple Software Update cleanup completed. Device drivers were preserved.'
 }
 
 function Assert-BetterCampFileHash([string]$Path, [string]$ExpectedHash) {
@@ -124,8 +229,27 @@ function Get-BetterCampAudioPatchPaths([string]$Root) {
     [pscustomobject]@{
         Tool = Join-Path $directory 'asl.exe'
         Table = Join-Path $directory 'dsdt_2012.aml'
+        OverrideTable = Join-Path $env:LOCALAPPDATA 'BetterCamp/audio/dsdt_2012_override.aml'
         State = Join-Path $env:LOCALAPPDATA 'BetterCamp/audio-patch.json'
     }
+}
+
+function New-BetterCampAudioOverrideTable([string]$Source, [string]$Destination) {
+    $bytes = [IO.File]::ReadAllBytes($Source)
+    if ($bytes.Length -lt 36 -or [Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ne 'DSDT') {
+        throw 'The bundled audio table has an invalid ACPI header.'
+    }
+    $tableLength = [BitConverter]::ToUInt32($bytes, 4)
+    if ($tableLength -ne $bytes.Length) { throw 'The bundled audio table length is invalid.' }
+    # Windows loads an ACPI registry override only when its OEM revision is higher than firmware.
+    [Array]::Copy([BitConverter]::GetBytes([uint32]0x7FFFFFFF), 0, $bytes, 24, 4)
+    $bytes[9] = 0
+    $sum = 0
+    foreach ($value in $bytes) { $sum = ($sum + $value) -band 0xFF }
+    $bytes[9] = [byte]((256 - $sum) -band 0xFF)
+    New-Item -ItemType Directory -Path (Split-Path $Destination -Parent) -Force | Out-Null
+    [IO.File]::WriteAllBytes($Destination, $bytes)
+    return (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
 }
 
 function Install-BetterCampAudioPatch($Machine, [string]$Root) {
@@ -144,6 +268,10 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
     $paths = Get-BetterCampAudioPatchPaths $Root
     Assert-BetterCampFileHash $paths.Tool '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
     Assert-BetterCampFileHash $paths.Table '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
+    $overrideHash = New-BetterCampAudioOverrideTable -Source $paths.Table -Destination $paths.OverrideTable
+    if ($overrideHash -ne '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') {
+        throw 'The generated audio table did not match the verified repair revision.'
+    }
 
     $current = Invoke-BetterCampNative 'bcdedit.exe' @('/enum', '{current}')
     if ($current.ExitCode -ne 0) { throw 'Could not read the current Windows boot configuration.' }
@@ -157,7 +285,7 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
         if ($enabled.ExitCode -ne 0) { throw 'Could not enable Windows test-signing mode. Secure Boot or BitLocker policy may be blocking the change.' }
     }
 
-    $loaded = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', $paths.Table)
+    $loaded = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', $paths.OverrideTable)
     if ($loaded.ExitCode -ne 0) {
         if ($testSigningWasEnabled -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
         throw 'The MacBookPro9,2 ACPI audio table could not be loaded; the test-signing change was rolled back when possible.'
@@ -171,11 +299,14 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
             AppliedAt = (Get-Date).ToString('o')
             TestSigningWasEnabled = $testSigningWasEnabled
             ToolSha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
-            TableSha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
+            SourceTableSha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
+            TableSha256 = $overrideHash
+            TablePath = $paths.OverrideTable
+            OemRevision = '0x7FFFFFFF'
         } | ConvertTo-Json | Set-Content -LiteralPath $paths.State -Encoding UTF8
     } catch {
         $stateError = $_.Exception.Message
-        $tableRollback = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table)
+        $tableRollback = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.OverrideTable)
         $signingRollback = $null
         if ($testSigningWasEnabled -eq $false) {
             $signingRollback = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
@@ -187,6 +318,46 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
     }
     Write-Host 'MacBookPro9,2 UEFI audio patch installed. It becomes active after Windows restarts.'
     return $true
+}
+
+function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
+    Install-BetterCampAudioPatch -Machine $Machine -Root $Root | Out-Null
+    $cirrus = Join-Path $Path 'Drivers\Cirrus\CirrusAudioCS4206x64.exe'
+    if (-not (Test-Path -LiteralPath $cirrus -PathType Leaf)) { throw 'The Cirrus CS4206 driver installer is missing.' }
+    $cirrusHash = (Get-BetterCampDriverHashes)['Cirrus\CirrusAudioCS4206x64.exe']
+    Assert-BetterCampDriverHash -Path $cirrus -ExpectedHash $cirrusHash -Label 'Cirrus\CirrusAudioCS4206x64.exe'
+    Write-Host 'Reinstalling the MacBookPro9,2 Cirrus CS4206 audio driver.'
+    $process = Start-Process -FilePath $cirrus -WorkingDirectory (Split-Path $cirrus -Parent) -Wait -PassThru
+    if ($process.ExitCode -notin @(0, 1641, 3010)) { throw "Cirrus audio driver installation failed (exit $($process.ExitCode))." }
+    $scan = Invoke-BetterCampNative 'pnputil.exe' @('/scan-devices')
+    if ($scan.ExitCode -ne 0) { Write-Warning 'Windows device rescan failed; the reboot will still perform hardware discovery.' }
+    $problems = @(Get-CimInstance -ClassName Win32_PnPEntity | Where-Object {
+        $_.ConfigManagerErrorCode -ne 0 -and ($_.Name -match 'Audio|Cirrus|High Definition' -or $_.PNPDeviceID -match '^(PCI|HDAUDIO)\\')
+    })
+    foreach ($device in $problems) {
+        Write-Host "Pending device: $($device.Name) | Code $($device.ConfigManagerErrorCode) | $($device.PNPDeviceID)"
+    }
+    Write-Host 'Audio repair staged with a higher ACPI table revision. Restart Windows before judging Code 10.'
+}
+
+function Show-BetterCampAudioDiagnosis([string]$Root) {
+    $paths = Get-BetterCampAudioPatchPaths $Root
+    if (Test-Path -LiteralPath $paths.State) {
+        try {
+            $state = Get-Content -LiteralPath $paths.State -Raw | ConvertFrom-Json
+            Write-Host "Audio patch state: applied $($state.AppliedAt), table revision $($state.OemRevision)"
+        } catch { Write-Warning 'Audio patch state exists but cannot be read.' }
+    } else { Write-Host 'Audio patch state: not installed by this BetterCamp version' }
+    $boot = Invoke-BetterCampNative 'bcdedit.exe' @('/enum', '{current}')
+    $testSigning = [regex]::Match($boot.Output, '(?im)^testsigning\s+(.+?)\s*$')
+    if ($testSigning.Success) { Write-Host "Windows test signing: $($testSigning.Groups[1].Value)" }
+    else { Write-Host 'Windows test signing: not shown in the current boot entry' }
+    $devices = @(Get-CimInstance -ClassName Win32_PnPEntity | Where-Object {
+        $_.Name -match 'Audio|Cirrus|High Definition' -or $_.PNPDeviceID -match '^(PCI|HDAUDIO)\\'
+    })
+    foreach ($device in $devices) {
+        Write-Host "Audio device: $($device.Name) | Code $($device.ConfigManagerErrorCode) | $($device.PNPDeviceID)"
+    }
 }
 
 function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
@@ -204,9 +375,19 @@ function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
         }
         if ($state.Model -ne 'MacBookPro9,2' -or
             $state.ToolSha256 -ne '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' -or
-            $state.TableSha256 -ne '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87') {
+            $state.TableSha256 -notin @('9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87', '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D')) {
             throw 'The BetterCamp audio patch state does not match this patch. No settings were changed.'
         }
+    }
+    $tableToRemove = $paths.Table
+    if ($null -ne $state -and 'TablePath' -in $state.PSObject.Properties.Name) {
+        if ([IO.Path]::GetFullPath([string]$state.TablePath) -ne [IO.Path]::GetFullPath($paths.OverrideTable)) {
+            throw 'The BetterCamp audio patch state contains an unexpected table path. No settings were changed.'
+        }
+        Assert-BetterCampFileHash $paths.OverrideTable ([string]$state.TableSha256)
+        $tableToRemove = $paths.OverrideTable
+    } elseif ($null -ne $state -and $state.TableSha256 -ne '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87') {
+        throw 'The BetterCamp audio patch state does not match the legacy table. No settings were changed.'
     }
     if ($null -eq $state) {
         Write-Warning 'No BetterCamp state file was found, so test-signing mode was left unchanged.'
@@ -214,8 +395,10 @@ function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
         $disabled = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
         if ($disabled.ExitCode -ne 0) { throw 'Windows test-signing mode could not be restored; the ACPI table was left unchanged.' }
     }
-    $removed = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table)
+    $removed = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $tableToRemove)
     if ($removed.ExitCode -ne 0) { throw 'Test-signing mode was restored when applicable, but the ACPI audio table could not be removed.' }
+    if ($tableToRemove -ne $paths.Table) { Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table) | Out-Null }
     if ($null -ne $state) { Remove-Item -LiteralPath $paths.State -Force }
+    if (Test-Path -LiteralPath $paths.OverrideTable) { Remove-Item -LiteralPath $paths.OverrideTable -Force }
     Write-Host 'UEFI audio patch removed. Restart Windows to finish reverting it.'
 }
