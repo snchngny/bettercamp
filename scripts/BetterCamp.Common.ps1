@@ -99,3 +99,123 @@ function Install-BetterCampPackage([string]$Path) {
     if ($process.ExitCode -notin @(0, 1641, 3010)) { throw "Apple installer returned exit code $($process.ExitCode). See the installer message and log." }
     return $process.ExitCode
 }
+
+function Assert-BetterCampFileHash([string]$Path, [string]$ExpectedHash) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Required audio patch file not found: $Path" }
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    if ($actual -ne $ExpectedHash) { throw "Audio patch file verification failed: $Path" }
+}
+
+function Invoke-BetterCampNative([string]$FilePath, [string[]]$Arguments) {
+    $previousPreference = $ErrorActionPreference
+    $output = @()
+    $exitCode = 1
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& $FilePath @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    foreach ($line in $output) { Write-Host $line }
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = ($output -join [Environment]::NewLine) }
+}
+
+function Get-BetterCampAudioPatchPaths([string]$Root) {
+    $directory = Join-Path $Root 'Audio_2011_2012'
+    [pscustomobject]@{
+        Tool = Join-Path $directory 'asl.exe'
+        Table = Join-Path $directory 'dsdt_2012.aml'
+        State = Join-Path $env:LOCALAPPDATA 'BetterCamp/audio-patch.json'
+    }
+}
+
+function Install-BetterCampAudioPatch($Machine, [string]$Root) {
+    if ($Machine.Model -ne 'MacBookPro9,2') {
+        throw "The bundled 2012 audio table is verified only for MacBookPro9,2; detected $($Machine.Model)."
+    }
+    if ($Machine.Firmware -ne 'UEFI') {
+        Write-Host 'Legacy BIOS boot detected; the UEFI audio patch is not required.'
+        return $false
+    }
+    $secureBootEnabled = $false
+    try { $secureBootEnabled = [bool](Confirm-SecureBootUEFI) }
+    catch { Write-Verbose 'Secure Boot state is unavailable; older Macs normally do not implement Windows Secure Boot.' }
+    if ($secureBootEnabled) { throw 'Secure Boot must be disabled before Windows can load an overridden ACPI table.' }
+
+    $paths = Get-BetterCampAudioPatchPaths $Root
+    Assert-BetterCampFileHash $paths.Tool '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
+    Assert-BetterCampFileHash $paths.Table '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
+
+    $current = Invoke-BetterCampNative 'bcdedit.exe' @('/enum', '{current}')
+    if ($current.ExitCode -ne 0) { throw 'Could not read the current Windows boot configuration.' }
+    $testSigningMatch = [regex]::Match($current.Output, '(?im)^testsigning\s+(.+?)\s*$')
+    if (-not $testSigningMatch.Success) { $testSigningWasEnabled = $false }
+    elseif ($testSigningMatch.Groups[1].Value -match '^(Yes|On|true|1)$') { $testSigningWasEnabled = $true }
+    elseif ($testSigningMatch.Groups[1].Value -match '^(No|Off|false|0)$') { $testSigningWasEnabled = $false }
+    else { $testSigningWasEnabled = $null }
+    if ($testSigningWasEnabled -ne $true) {
+        $enabled = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'on')
+        if ($enabled.ExitCode -ne 0) { throw 'Could not enable Windows test-signing mode. Secure Boot or BitLocker policy may be blocking the change.' }
+    }
+
+    $loaded = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', $paths.Table)
+    if ($loaded.ExitCode -ne 0) {
+        if ($testSigningWasEnabled -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
+        throw 'The MacBookPro9,2 ACPI audio table could not be loaded; the test-signing change was rolled back when possible.'
+    }
+
+    try {
+        $stateDirectory = Split-Path $paths.State -Parent
+        New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+        [pscustomobject]@{
+            Model = $Machine.Model
+            AppliedAt = (Get-Date).ToString('o')
+            TestSigningWasEnabled = $testSigningWasEnabled
+            ToolSha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
+            TableSha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
+        } | ConvertTo-Json | Set-Content -LiteralPath $paths.State -Encoding UTF8
+    } catch {
+        $stateError = $_.Exception.Message
+        $tableRollback = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table)
+        $signingRollback = $null
+        if ($testSigningWasEnabled -eq $false) {
+            $signingRollback = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
+        }
+        if (Test-Path -LiteralPath $paths.State) { Remove-Item -LiteralPath $paths.State -Force }
+        $rollbackStatus = "table=$($tableRollback.ExitCode)"
+        if ($null -ne $signingRollback) { $rollbackStatus += ", testsigning=$($signingRollback.ExitCode)" }
+        throw "Could not save the audio patch recovery state ($stateError). Changes were rolled back where possible ($rollbackStatus)."
+    }
+    Write-Host 'MacBookPro9,2 UEFI audio patch installed. It becomes active after Windows restarts.'
+    return $true
+}
+
+function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
+    if ($Machine.Model -ne 'MacBookPro9,2') { throw "Audio patch removal is limited to MacBookPro9,2; detected $($Machine.Model)." }
+    $paths = Get-BetterCampAudioPatchPaths $Root
+    Assert-BetterCampFileHash $paths.Tool '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
+    Assert-BetterCampFileHash $paths.Table '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
+    $state = $null
+    if (Test-Path -LiteralPath $paths.State) {
+        try { $state = Get-Content -LiteralPath $paths.State -Raw | ConvertFrom-Json }
+        catch { throw 'The BetterCamp audio patch state is damaged. No boot or ACPI settings were changed.' }
+        $required = @('Model', 'TestSigningWasEnabled', 'ToolSha256', 'TableSha256')
+        foreach ($name in $required) {
+            if ($name -notin $state.PSObject.Properties.Name) { throw "The BetterCamp audio patch state is missing $name. No settings were changed." }
+        }
+        if ($state.Model -ne 'MacBookPro9,2' -or
+            $state.ToolSha256 -ne '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' -or
+            $state.TableSha256 -ne '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87') {
+            throw 'The BetterCamp audio patch state does not match this patch. No settings were changed.'
+        }
+    }
+    if ($null -eq $state) {
+        Write-Warning 'No BetterCamp state file was found, so test-signing mode was left unchanged.'
+    } elseif ($state.TestSigningWasEnabled -eq $false) {
+        $disabled = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
+        if ($disabled.ExitCode -ne 0) { throw 'Windows test-signing mode could not be restored; the ACPI table was left unchanged.' }
+    }
+    $removed = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table)
+    if ($removed.ExitCode -ne 0) { throw 'Test-signing mode was restored when applicable, but the ACPI audio table could not be removed.' }
+    if ($null -ne $state) { Remove-Item -LiteralPath $paths.State -Force }
+    Write-Host 'UEFI audio patch removed. Restart Windows to finish reverting it.'
+}
