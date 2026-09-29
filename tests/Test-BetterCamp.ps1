@@ -214,10 +214,15 @@ try {
     }
     Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'failed DSDT load is reported'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'failed load rolls back test signing'
+    $efiLoader = Get-BetterCampWindowsLoaderInfo "path                  \Windows\system32\winload.efi"
+    $biosLoader = Get-BetterCampWindowsLoaderInfo "path                  \Windows\system32\winload.exe"
+    Assert-True ($efiLoader.Firmware -eq 'UEFI' -and $efiLoader.Path -eq '\Windows\system32\winload.efi') 'UEFI loader parsed from localized BCD output'
+    Assert-True ($biosLoader.Firmware -eq 'BIOS' -and $biosLoader.Path -eq '\Windows\system32\winload.exe') 'BIOS loader parsed from localized BCD output'
+    Assert-True ($null -eq (Get-BetterCampWindowsLoaderInfo 'path unavailable')) 'missing loader remains unknown'
     $env:LOCALAPPDATA = $oldAudioLocalAppData
     Remove-Variable -Name BetterCampSystemRootOverride -Scope Script
 
-    # CLI integration: no elevation, network or installation may occur during diagnosis.
+    # Diagnosis is isolated from the host: no real firmware, ACPI, BCD, network, or installer access.
     function Get-CimInstance {
         param($ClassName)
         switch ($ClassName) {
@@ -234,11 +239,26 @@ try {
         }
     }
     function Get-ItemPropertyValue { param($LiteralPath,$Name); return 2 }
+    function Get-BetterCampActiveDsdtInfo { return @() }
+    function Invoke-BetterCampNative {
+        param($FilePath, $Arguments)
+        if ($FilePath -ne 'bcdedit.exe') { throw "Unexpected native command: $FilePath" }
+        return [pscustomobject]@{ExitCode=0;Output="path                  \Windows\system32\winload.efi`r`ntestsigning           Yes"}
+    }
     function Start-Process { throw 'Diagnosis must not launch a process' }
     function Invoke-WebRequest { throw 'Diagnosis must not access network' }
-    $diagnosisOutput = (& (Join-Path $root 'bettercamp.ps1') -Diagnose 6>&1 | Out-String)
+    $oldDiagnosisLocalAppData = $env:LOCALAPPDATA
+    $env:LOCALAPPDATA = Join-Path $temporary 'isolated diagnosis state'
+    $script:BetterCampSystemRootOverride = Join-Path $temporary 'isolated diagnosis Windows'
+    New-Item -ItemType Directory -Path (Join-Path $script:BetterCampSystemRootOverride 'System32') -Force | Out-Null
+    try {
+        $diagnosisOutput = (Show-BetterCampAudioDiagnosis -Root $root -Machine ([pscustomobject]@{Firmware='UEFI'}) 6>&1 | Out-String)
+    } finally {
+        $env:LOCALAPPDATA = $oldDiagnosisLocalAppData
+        Remove-Variable -Name BetterCampSystemRootOverride -Scope Script
+    }
     Write-Host $diagnosisOutput
-    Assert-True ($LASTEXITCODE -eq 0) 'diagnose target machine'
+    Assert-True ($diagnosisOutput -match 'Windows boot loader: \\Windows\\system32\\winload\.efi \(UEFI\)') 'diagnosis reports the active Windows loader mode'
     Assert-True ($diagnosisOutput -match 'PCI\\VEN_8086&DEV_1E20' -and $diagnosisOutput -notmatch 'DEV_1502') 'diagnosis lists the Intel HDA controller without unrelated PCI devices'
 
     # Exercise the real archive/extraction and download-only entry point with a local ZIP.

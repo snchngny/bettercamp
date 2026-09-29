@@ -21,7 +21,7 @@ try {
     $operationCount = @($Diagnose, $DownloadOnly, $AudioPatchOnly, $RepairAudio, $RemoveAudioPatch, $CleanupBootCamp).Where({ $_ }).Count
     if ($operationCount -gt 1) { throw 'Choose only one operation mode.' }
     if ($Diagnose) {
-        Show-BetterCampAudioDiagnosis -Root $PSScriptRoot
+        Show-BetterCampAudioDiagnosis -Root $PSScriptRoot -Machine $machine
         Write-Host 'Target recognized. Diagnosis complete; no drivers or boot settings were changed.'
         exit 0
     }

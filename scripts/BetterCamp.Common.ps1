@@ -449,7 +449,16 @@ function Get-BetterCampActiveDsdtInfo {
     return @($tables | Sort-Object Revision -Unique)
 }
 
-function Show-BetterCampAudioDiagnosis([string]$Root) {
+function Get-BetterCampWindowsLoaderInfo([string]$BcdOutput) {
+    $match = [regex]::Match($BcdOutput, '(?i)\\Windows\\system32\\winload\.(efi|exe)')
+    if (-not $match.Success) { return $null }
+    return [pscustomobject]@{
+        Path = $match.Value
+        Firmware = if ($match.Groups[1].Value -ieq 'efi') { 'UEFI' } else { 'BIOS' }
+    }
+}
+
+function Show-BetterCampAudioDiagnosis([string]$Root, $Machine) {
     $paths = Get-BetterCampAudioPatchPaths $Root
     if (Test-Path -LiteralPath $paths.State) {
         try {
@@ -475,6 +484,15 @@ function Show-BetterCampAudioDiagnosis([string]$Root) {
         }
     }
     $boot = Invoke-BetterCampNative 'bcdedit.exe' @('/enum', '{current}')
+    $loader = Get-BetterCampWindowsLoaderInfo $boot.Output
+    if ($null -ne $loader) {
+        Write-Host "Windows boot loader: $($loader.Path) ($($loader.Firmware))"
+        if ($null -ne $Machine -and $Machine.Firmware -ne 'Unknown' -and $Machine.Firmware -ne $loader.Firmware) {
+            Write-Warning "Firmware indicators disagree: PEFirmwareType reports $($Machine.Firmware), but the current BCD entry uses $($loader.Path). Do not apply or remove the DSDT patch until this mismatch is reviewed."
+        }
+    } else {
+        Write-Host 'Windows boot loader: not shown in the current boot entry'
+    }
     $testSigning = [regex]::Match($boot.Output, '(?im)^testsigning\s+(.+?)\s*$')
     if ($testSigning.Success) { Write-Host "Windows test signing: $($testSigning.Groups[1].Value)" }
     else { Write-Host 'Windows test signing: not shown in the current boot entry' }
