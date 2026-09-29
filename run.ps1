@@ -18,7 +18,7 @@ $launcherBase = Join-Path $env:LOCALAPPDATA 'BetterCamp/launcher'
 $launcherRoot = Join-Path $launcherBase ([guid]::NewGuid().ToString('N'))
 $commonDirectory = Join-Path $launcherRoot 'scripts'
 $audioDirectory = Join-Path $launcherRoot 'Audio_2011_2012'
-$launcherRevision = '66f3430aa65fc96680407d6f0e56025ffedfd5f9'
+$launcherRevision = 'db5133e127160b8bfdcb8852aa28b3aaed2a7c4a'
 
 try {
     function Get-LauncherHash([string]$Path) {
@@ -33,7 +33,7 @@ try {
     New-Item -ItemType Directory -Path $commonDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $audioDirectory -Force | Out-Null
     $files = @(
-        @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = '6DE919E34E3E1846954B56F752DED697E523CC4E886894102751C7D07CADB309' },
+        @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = 'FB2F6436C41366FF4A6492766E791CC268CEC08491E85F97C7361EE121561F51' },
         @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = 'BAFD30FE05C4549B7B8CA365D4E965B63C6CC0809278E4CFDC72D6D9BE60C4A5' },
         @{ Name = 'Audio_2011_2012/asl.exe'; Destination = (Join-Path $audioDirectory 'asl.exe'); Sha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' },
         @{ Name = 'Audio_2011_2012/dsdt_2012.aml'; Destination = (Join-Path $audioDirectory 'dsdt_2012.aml'); Sha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87' }
@@ -53,7 +53,7 @@ try {
     if ($StageOnly) { $global:LASTEXITCODE = 0; return }
 
     function ConvertTo-Literal([string]$Value) { return "'" + $Value.Replace("'", "''") + "'" }
-    $command = '& ' + (ConvertTo-Literal (Join-Path $launcherRoot 'bettercamp.ps1'))
+    $command = '$global:LASTEXITCODE = 0; & ' + (ConvertTo-Literal (Join-Path $launcherRoot 'bettercamp.ps1'))
     if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-Literal $BootCampPath) }
     if ($Diagnose) { $command += ' -Diagnose' }
     if ($DownloadOnly) { $command += ' -DownloadOnly' }
@@ -62,7 +62,7 @@ try {
     if ($RemoveAudioPatch) { $command += ' -RemoveAudioPatch' }
     if ($CleanupBootCamp) { $command += ' -CleanupBootCamp' }
     if ($SkipAudioPatch) { $command += ' -SkipAudioPatch' }
-    $command += '; exit $LASTEXITCODE'
+    $command += '; exit $global:LASTEXITCODE'
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
 
     $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -Wait -PassThru
