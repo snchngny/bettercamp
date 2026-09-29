@@ -9,7 +9,7 @@ MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShell�
 Windows 11でPowerShellを開き、次の1行を貼り付けてEnterを押します。リポジトリのZIP保存・展開は不要です。
 
 ```powershell
-irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1 | iex
+irm https://raw.githubusercontent.com/snchngny/bettercamp/8c1f6450fcca054e1193f9240d6d88d879dcb1cc/run.ps1 | iex
 ```
 
 管理者権限を求めるWindowsの画面で「はい」を選びます。必要なデバイスドライバーを順番に導入した後、Windowsを再起動してください。
@@ -42,7 +42,7 @@ PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダ
 以前の版で一括セットアップを実行済みの場合、次の救済コマンドはBoot Camp ManagerとControl PanelのMSIを対話表示付きでアンインストールします。Apple Software Updateも削除を試みますが、そちらだけ失敗してもBoot Campの削除は完了扱いにします。導入済みのデバイスドライバーと音声パッチは残します。MSIエラー時は`%LOCALAPPDATA%\BetterCamp\logs`に詳細ログを保存します。
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -CleanupBootCamp
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/8c1f6450fcca054e1193f9240d6d88d879dcb1cc/run.ps1))) -CleanupBootCamp
 ```
 
 ## 手元のドライバー・最新版を使う
@@ -83,7 +83,7 @@ bettercamp-main/
 ファイルを保存していない場合は次の1行で診断できます。`acpitabl.dat`のhashに加え、Windowsが実際に読み込んだDSDTのOEM revisionとhashも表示します:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -Diagnose
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/8c1f6450fcca054e1193f9240d6d88d879dcb1cc/run.ps1))) -Diagnose
 ```
 
 対応MacBook上で取得・署名検証だけ実行:
@@ -98,10 +98,10 @@ bettercamp-main/
 
 `MacBookPro9,2`をUEFI起動している場合、通常の1行起動で次も自動実行します。
 
-1. 同梱`asl.exe`と`dsdt_2012.aml`のSHA-256を検証
+1. 同梱`dsdt_2012.aml`のSHA-256を検証
 2. Windowsがファームウェア側より確実に新しい版として選べるOEM revisionのDSDTを生成し、ACPI checksumを再計算
 3. `bcdedit`でWindowsのテスト署名モードを有効化
-4. Microsoft ASLの`/loadtable`で音声修正済みDSDTを登録
+4. 音声修正済みDSDTをMicrosoft公式の`%SystemRoot%\System32\acpitabl.dat`として配置
 5. Boot Camp Managerを除外して個別デバイスドライバーを導入
 
 変更は再起動後に有効になります。テスト署名モードではデスクトップに「テスト モード」の表示が出ます。MicrosoftはACPIテーブル上書きを開発・テスト用とし、起動不能になる可能性を警告しています。実行前にWindows回復環境またはmacOSからWindowsボリュームへアクセスできる状態を用意してください。Secure Bootが有効な場合は適用を停止します。
@@ -109,13 +109,13 @@ bettercamp-main/
 すでにBoot Campドライバーを導入済みで、音声パッチだけ適用する場合:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -AudioPatchOnly
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/8c1f6450fcca054e1193f9240d6d88d879dcb1cc/run.ps1))) -AudioPatchOnly
 ```
 
 元へ戻す場合。登録したDSDTを削除し、BetterCampが今回有効にした場合だけテスト署名モードも無効にします:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -RemoveAudioPatch
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/8c1f6450fcca054e1193f9240d6d88d879dcb1cc/run.ps1))) -RemoveAudioPatch
 ```
 
 `MacBookPro9,1`、`MacBookPro10,1`、`MacBookPro10,2`には同じDSDTを自動適用しません。元READMEでの2012年実機確認が`MacBookPro9,2`だけで、機種固有ACPIの横断利用を確認できないためです。`-Diagnose`で機種IDを確認できます。Boot Camp導入だけにする場合は`-SkipAudioPatch`を指定できます。
@@ -124,10 +124,10 @@ bettercamp-main/
 
 初期版は同梱DSDTを元のOEM revisionのまま登録していました。Microsoftの仕様では、レジストリから読み込むACPI tableはファームウェア内の同じtableより高いversionでなければ採用されません。ASLが登録成功を返しても、再起動時に置換DSDTが選ばれず、Intel High Definition Audio Controllerがコード10のまま残る場合があります。
 
-次の修復コマンドは、検証済みDSDTの処理内容を変えずOEM revisionとchecksumだけを更新し、Microsoftが案内する`%SystemRoot%\System32\acpitabl.dat`として起動時に読み込ませます。異なる既存`acpitabl.dat`は上書きしません。続けて`MacBookPro9,2`のCirrus CS4206ドライバーを入れ直してデバイスを再スキャンします。**完了後の再起動が必須です。**
+次の修復コマンドは、検証済みDSDTの処理内容を変えずOEM revisionとchecksumだけを更新し、Microsoftが案内する`%SystemRoot%\System32\acpitabl.dat`として起動時に読み込ませます。異なる既存`acpitabl.dat`は上書きしません。テスト署名は再起動後に有効になるため、同じ実行中の`asl /loadtable`には依存しません。続けて`MacBookPro9,2`のCirrus CS4206ドライバーを入れ直してデバイスを再スキャンします。**完了後の再起動が必須です。**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/e9059fb99ceea258649519acc3304817707fc269/run.ps1))) -RepairAudio
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/8c1f6450fcca054e1193f9240d6d88d879dcb1cc/run.ps1))) -RepairAudio
 ```
 
 Legacy BIOS起動ではDSDTを変更しません。`-RepairAudio`はCode 10のIntel HDA controllerだけを削除・再検出し、Cirrus driverを再導入します。完了後は再起動ではなくWindowsを完全にシャットダウンし、20秒待ってから電源を入れてください。
