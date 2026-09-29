@@ -48,67 +48,12 @@ function Repair-BetterCampMacminiBluetooth($Machine) {
         Write-Host 'Macmini8,1 internal Bluetooth is already healthy.'
         return $true
     }
-    Write-Host "Restarting the failed Broadcom Bluetooth bus device (Code $($device.ConfigManagerErrorCode))."
-    Invoke-BetterCampNative 'pnputil.exe' @('/restart-device', 'ACPI\BCM2E7C\1') | Out-Null
-    Start-Sleep -Seconds 2
-    $device = Get-BetterCampMacminiBluetoothDevice
-    if ($null -ne $device -and [int]$device.ConfigManagerErrorCode -eq 0) {
-        Write-Host 'Macmini8,1 internal Bluetooth recovered after the device restart.'
-        return $true
-    }
-
     $current = @(Get-CimInstance -ClassName Win32_PnPSignedDriver | Where-Object {
         $_.DeviceID -eq 'ACPI\BCM2E7C\1'
     }) | Select-Object -First 1
-    if ($null -eq $current -or [string]$current.DriverVersion -ne '12.0.1.879' -or [string]$current.InfName -notmatch '^oem\d+\.inf$') {
-        throw 'The failed Bluetooth device is not using the verified Broadcom 12.0.1.879 package; no driver was changed.'
-    }
-    $users = @(Get-CimInstance -ClassName Win32_PnPSignedDriver | Where-Object {
-        $_.InfName -eq $current.InfName
-    })
-    if ($users.Count -ne 1 -or $users[0].DeviceID -ne 'ACPI\BCM2E7C\1') {
-        throw "The active package $($current.InfName) is used by another device; no driver was changed."
-    }
-    $fallbacks = @(Get-WindowsDriver -Online -All | Where-Object {
-        [IO.Path]::GetFileName([string]$_.OriginalFileName) -eq 'btwserialbus-dev.inf' -and
-        [string]$_.Version -eq '12.0.1.874'
-    })
-    if ($fallbacks.Count -ne 1 -or [string]$fallbacks[0].Driver -notmatch '^oem\d+\.inf$') {
-        throw 'The verified Broadcom 12.0.1.874 fallback is not present exactly once in the Windows driver store; no driver was changed.'
-    }
-
-    $backup = Join-Path $env:LOCALAPPDATA ('BetterCamp/backups/macmini81-bluetooth-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-    New-Item -ItemType Directory -Path $backup -Force | Out-Null
-    $exported = Invoke-BetterCampNative 'pnputil.exe' @('/export-driver', [string]$current.InfName, $backup)
-    if ($exported.ExitCode -ne 0) { throw "Could not back up $($current.InfName); no driver was changed." }
-    [pscustomobject]@{
-        Model = $Machine.Model
-        DeviceId = 'ACPI\BCM2E7C\1'
-        PreviousInf = [string]$current.InfName
-        PreviousVersion = [string]$current.DriverVersion
-        FallbackInf = [string]$fallbacks[0].Driver
-        FallbackVersion = [string]$fallbacks[0].Version
-        AppliedAt = (Get-Date).ToString('o')
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backup 'repair-state.json') -Encoding UTF8
-
-    Write-Host "Switching Broadcom Bluetooth from 12.0.1.879 to the stored 12.0.1.874 package. Backup: $backup"
-    $removed = Invoke-BetterCampNative 'pnputil.exe' @('/delete-driver', [string]$current.InfName, '/uninstall', '/force')
-    if ($removed.ExitCode -ne 0) { throw "Could not remove the failed Broadcom package (exit $($removed.ExitCode)). Backup: $backup" }
-    $scan = Invoke-BetterCampNative 'pnputil.exe' @('/scan-devices')
-    if ($scan.ExitCode -ne 0) { throw "The Broadcom package was removed, but Windows device rescan failed. Restart Windows. Backup: $backup" }
-    Start-Sleep -Seconds 3
-    $device = Get-BetterCampMacminiBluetoothDevice
-    $installed = @(Get-CimInstance -ClassName Win32_PnPSignedDriver | Where-Object {
-        $_.DeviceID -eq 'ACPI\BCM2E7C\1'
-    }) | Select-Object -First 1
-    if ($null -ne $device -and [int]$device.ConfigManagerErrorCode -eq 0 -and
-        $null -ne $installed -and [string]$installed.DriverVersion -eq '12.0.1.874') {
-        Write-Host 'Macmini8,1 internal Bluetooth recovered with Broadcom 12.0.1.874.'
-        return $true
-    }
-    $code = if ($null -eq $device) { 'not enumerated' } else { [string]$device.ConfigManagerErrorCode }
-    $version = if ($null -eq $installed) { 'not installed' } else { [string]$installed.DriverVersion }
-    Write-Warning "Bluetooth repair is pending after rescan (Code $code, driver $version). Shut Windows down fully, wait 20 seconds, then power the Mac mini on. Backup: $backup"
+    $version = if ($null -eq $current) { 'not installed' } else { [string]$current.DriverVersion }
+    Write-Warning "Macmini8,1 internal Bluetooth has Code $($device.ConfigManagerErrorCode) with driver $version. Automated repair is disabled because tested Broadcom and Intel UART driver changes did not restore the Bluetooth radio. No driver was changed."
+    Write-Host 'If Bluetooth is not used, this device error can be left as-is. Other Mac mini devices are unaffected.'
     return $false
 }
 

@@ -27,7 +27,7 @@ try {
         exit 0
     }
     if ($BootCampPath) { $BootCampPath = Resolve-BetterCampPath -Path $BootCampPath -Root $PSScriptRoot }
-    if (-not $DownloadOnly -and -not (Test-BetterCampAdministrator)) {
+    if (-not $DownloadOnly -and -not $RepairBluetooth -and -not (Test-BetterCampAdministrator)) {
         $command = '$global:LASTEXITCODE = 0; & ' + (ConvertTo-BetterCampLiteral $PSCommandPath)
         if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-BetterCampLiteral $BootCampPath) }
         if ($AudioPatchOnly) { $command += ' -AudioPatchOnly' }

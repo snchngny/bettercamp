@@ -30,19 +30,19 @@ PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダ
 | MacBookPro9,2 | 13インチ Mid 2012（ドライバー・音声パッチ対応） |
 | MacBookPro10,1 | Retina 15インチ Mid 2012系（診断のみ） |
 | MacBookPro10,2 | Retina 13インチ Late 2012系（診断のみ） |
-| Macmini8,1 | Mac mini 2018（内蔵Bluetoothコード10修復のみ） |
+| Macmini8,1 | Mac mini 2018（内蔵Bluetoothコード10診断のみ） |
 
 64-bit Windows 11（build 22000以上）を確認してから起動します。ドライバーの自動導入と同梱DSDTは、元プロジェクトで実機確認された`MacBookPro9,2`だけに限定しています。ほかのMacや一般のPCではインストーラーを起動しません。
 
-## Mac mini 2018の内蔵Bluetooth修復
+## Mac mini 2018の内蔵Bluetooth診断
 
-`Macmini8,1`で`Broadcom Serial Bus Driver over UART Bus Enumerator`（`ACPI\BCM2E7C\1`）がコード10になり、Bluetoothデバイスが表示されない場合だけ使います。最初にデバイス再起動を試し、直らない場合は使用中のBroadcom `12.0.1.879`をバックアップして、Windows Driver Storeに既に保存されている`12.0.1.874`へ戻します。対象機種、Hardware ID、使用中ドライバー、代替ドライバーが一致しなければ変更しません。
+`Macmini8,1`で`Broadcom Serial Bus Driver over UART Bus Enumerator`（`ACPI\BCM2E7C\1`）がコード10になった場合の状態確認に使います。互換性のためコマンド名は`-RepairBluetooth`のままですが、ドライバーやWindows設定は変更しません。
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/c2d41920f0015ac70d12cd94f009d9a0d0399e3e/run.ps1))) -RepairBluetooth
 ```
 
-管理者権限を求める画面で「はい」を選びます。即時復帰しない場合はWindowsを完全にシャットダウンし、20秒待ってからMac miniの電源を入れてください。バックアップと修復状態は`%LOCALAPPDATA%\BetterCamp\backups`へ保存します。MacBook Pro用のDSDT、テスト署名、Cirrusドライバー、Boot Camp Managerには触れません。
+実機ではBroadcom `12.0.1.879`からApple配布版`12.0.1.874`への変更、UHE `12.0.1.870`、Intel UART `30.100.2132.2`を確認しましたが、再起動後も内蔵Bluetooth無線は復帰しませんでした。そのため自動変更は行いません。Bluetoothを使わない場合、このコード10はそのままでも音声、Wi-Fi、GPU、SSDには影響しません。Bluetoothが必要な場合は、Windows Updateの「現在のWindowsを再インストール（アプリ、ファイル、設定を保持）」を次の候補として手動で検討してください。
 
 ## Boot Camp Managerを入れない理由
 
