@@ -5,7 +5,9 @@ param(
     [switch]$Diagnose,
     [switch]$DownloadOnly,
     [switch]$AudioPatchOnly,
+    [switch]$RepairAudio,
     [switch]$RemoveAudioPatch,
+    [switch]$CleanupBootCamp,
     [switch]$SkipAudioPatch,
     [string]$LauncherSourceDirectory,
     [switch]$StageOnly
@@ -16,7 +18,7 @@ $launcherBase = Join-Path $env:LOCALAPPDATA 'BetterCamp/launcher'
 $launcherRoot = Join-Path $launcherBase ([guid]::NewGuid().ToString('N'))
 $commonDirectory = Join-Path $launcherRoot 'scripts'
 $audioDirectory = Join-Path $launcherRoot 'Audio_2011_2012'
-$launcherRevision = 'b89a437ba8581b18b16207ff96984fd09d4e2fcc'
+$launcherRevision = '354b61b1df45ff60f4516932ddc1cfcb8c871f6e'
 
 try {
     function Get-LauncherHash([string]$Path) {
@@ -31,8 +33,8 @@ try {
     New-Item -ItemType Directory -Path $commonDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $audioDirectory -Force | Out-Null
     $files = @(
-        @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = '5CFCC558518E43EDAF99522455EDC8D5ABD0467794DBABA85375784EC36CBA98' },
-        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = 'DE559AE1B509822326CABACB0ECBF99D4659F4BFD0DCF9DE1F08B99F20B0A852' },
+        @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = '6DE919E34E3E1846954B56F752DED697E523CC4E886894102751C7D07CADB309' },
+        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = 'AA036CEF62DB1C8254AA776FD2360364E3C5159B450B1D0254B8208E5106E82C' },
         @{ Name = 'Audio_2011_2012/asl.exe'; Destination = (Join-Path $audioDirectory 'asl.exe'); Sha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' },
         @{ Name = 'Audio_2011_2012/dsdt_2012.aml'; Destination = (Join-Path $audioDirectory 'dsdt_2012.aml'); Sha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87' }
     )
@@ -56,7 +58,9 @@ try {
     if ($Diagnose) { $command += ' -Diagnose' }
     if ($DownloadOnly) { $command += ' -DownloadOnly' }
     if ($AudioPatchOnly) { $command += ' -AudioPatchOnly' }
+    if ($RepairAudio) { $command += ' -RepairAudio' }
     if ($RemoveAudioPatch) { $command += ' -RemoveAudioPatch' }
+    if ($CleanupBootCamp) { $command += ' -CleanupBootCamp' }
     if ($SkipAudioPatch) { $command += ' -SkipAudioPatch' }
     $command += '; exit $LASTEXITCODE'
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
