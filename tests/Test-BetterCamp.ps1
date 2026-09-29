@@ -108,6 +108,8 @@ try {
     # MacBookPro9,2 UEFI audio patch: enable, load, record state, and fully revert.
     $oldAudioLocalAppData = $env:LOCALAPPDATA
     $env:LOCALAPPDATA = Join-Path $temporary 'audio state'
+    $script:BetterCampSystemRootOverride = Join-Path $temporary 'Windows'
+    New-Item -ItemType Directory -Path (Join-Path $script:BetterCampSystemRootOverride 'System32') -Force | Out-Null
     $audioMachine = [pscustomobject]@{Model='MacBookPro9,2';Firmware='UEFI'}
     $script:nativeCalls = @()
     function Confirm-SecureBootUEFI { return $false }
@@ -124,12 +126,14 @@ try {
     $overrideBytes = [IO.File]::ReadAllBytes($audioState.OverrideTable)
     Assert-True ([BitConverter]::ToUInt32($overrideBytes, 24) -eq 0x7FFFFFFF) 'DSDT OEM revision is higher than firmware table'
     Assert-True (((($overrideBytes | Measure-Object -Sum).Sum) -band 0xFF) -eq 0) 'generated DSDT checksum valid'
+    Assert-True ((Get-FileHash -LiteralPath $audioState.SystemTable -Algorithm SHA256).Hash -eq '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') 'acpitabl.dat boot override installed'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning on' }).Count -eq 1) 'test signing enabled'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v *dsdt_2012_override.aml' }).Count -eq 1) 'higher-revision DSDT loaded'
     Remove-BetterCampAudioPatch -Machine $audioMachine -Root $root
     Assert-True (-not (Test-Path -LiteralPath $audioState.State)) 'audio patch state removed'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -like '/loadtable -v -d *dsdt_2012_override.aml' }).Count -eq 1) 'DSDT override removed'
     Assert-True (-not (Test-Path -LiteralPath $audioState.OverrideTable)) 'generated DSDT file removed'
+    Assert-True (-not (Test-Path -LiteralPath $audioState.SystemTable)) 'acpitabl.dat boot override removed'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'test signing restored'
 
     New-Item -ItemType Directory -Path (Split-Path $audioState.State -Parent) -Force | Out-Null
@@ -173,6 +177,7 @@ try {
     Assert-Throws { Install-BetterCampAudioPatch -Machine $audioMachine -Root $root } 'failed DSDT load is reported'
     Assert-True (@($script:nativeCalls | Where-Object { $_.Arguments -eq '/set {current} testsigning off' }).Count -eq 1) 'failed load rolls back test signing'
     $env:LOCALAPPDATA = $oldAudioLocalAppData
+    Remove-Variable -Name BetterCampSystemRootOverride -Scope Script
 
     # CLI integration: no elevation, network or installation may occur during diagnosis.
     function Get-CimInstance {

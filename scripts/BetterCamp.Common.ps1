@@ -245,10 +245,13 @@ function Invoke-BetterCampNative([string]$FilePath, [string[]]$Arguments) {
 
 function Get-BetterCampAudioPatchPaths([string]$Root) {
     $directory = Join-Path $Root 'Audio_2011_2012'
+    $systemRootOverride = Get-Variable -Name BetterCampSystemRootOverride -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    $systemRoot = if ($systemRootOverride) { [string]$systemRootOverride } else { $env:SystemRoot }
     [pscustomobject]@{
         Tool = Join-Path $directory 'asl.exe'
         Table = Join-Path $directory 'dsdt_2012.aml'
         OverrideTable = Join-Path $env:LOCALAPPDATA 'BetterCamp/audio/dsdt_2012_override.aml'
+        SystemTable = Join-Path $systemRoot 'System32/acpitabl.dat'
         State = Join-Path $env:LOCALAPPDATA 'BetterCamp/audio-patch.json'
     }
 }
@@ -291,6 +294,21 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
     if ($overrideHash -ne '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D') {
         throw 'The generated audio table did not match the verified repair revision.'
     }
+    $priorState = $null
+    if (Test-Path -LiteralPath $paths.State -PathType Leaf) {
+        try { $priorState = Get-Content -LiteralPath $paths.State -Raw | ConvertFrom-Json } catch { }
+        if ($null -ne $priorState -and $priorState.Model -ne 'MacBookPro9,2') { $priorState = $null }
+    }
+    $systemTableOwnedBefore = $null -ne $priorState -and
+        'SystemTableCreatedByBetterCamp' -in $priorState.PSObject.Properties.Name -and
+        [bool]$priorState.SystemTableCreatedByBetterCamp
+    $systemTableExisted = Test-Path -LiteralPath $paths.SystemTable -PathType Leaf
+    if ($systemTableExisted) {
+        $existingSystemHash = (Get-FileHash -LiteralPath $paths.SystemTable -Algorithm SHA256).Hash
+        if ($existingSystemHash -ne $overrideHash) {
+            throw "Windows already has a different ACPI override at $($paths.SystemTable). It was not overwritten."
+        }
+    }
 
     $current = Invoke-BetterCampNative 'bcdedit.exe' @('/enum', '{current}')
     if ($current.ExitCode -ne 0) { throw 'Could not read the current Windows boot configuration.' }
@@ -299,15 +317,30 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
     elseif ($testSigningMatch.Groups[1].Value -match '^(Yes|On|true|1)$') { $testSigningWasEnabled = $true }
     elseif ($testSigningMatch.Groups[1].Value -match '^(No|Off|false|0)$') { $testSigningWasEnabled = $false }
     else { $testSigningWasEnabled = $null }
-    if ($testSigningWasEnabled -ne $true) {
+    $testSigningBeforeThisRun = $testSigningWasEnabled
+    $testSigningForRecovery = $testSigningBeforeThisRun
+    if ($null -ne $priorState -and 'TestSigningWasEnabled' -in $priorState.PSObject.Properties.Name) {
+        $testSigningForRecovery = [bool]$priorState.TestSigningWasEnabled
+    }
+    if ($testSigningBeforeThisRun -ne $true) {
         $enabled = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'on')
         if ($enabled.ExitCode -ne 0) { throw 'Could not enable Windows test-signing mode. Secure Boot or BitLocker policy may be blocking the change.' }
     }
 
     $loaded = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', $paths.OverrideTable)
     if ($loaded.ExitCode -ne 0) {
-        if ($testSigningWasEnabled -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
+        if ($testSigningBeforeThisRun -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
         throw 'The MacBookPro9,2 ACPI audio table could not be loaded; the test-signing change was rolled back when possible.'
+    }
+
+    try {
+        if (-not $systemTableExisted) { Copy-Item -LiteralPath $paths.OverrideTable -Destination $paths.SystemTable }
+        Assert-BetterCampFileHash $paths.SystemTable $overrideHash
+    } catch {
+        Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.OverrideTable) | Out-Null
+        if (-not $systemTableExisted -and (Test-Path -LiteralPath $paths.SystemTable)) { Remove-Item -LiteralPath $paths.SystemTable -Force }
+        if ($testSigningBeforeThisRun -eq $false) { Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off') | Out-Null }
+        throw "Could not install the Windows ACPI boot override: $($_.Exception.Message)"
     }
 
     try {
@@ -316,18 +349,21 @@ function Install-BetterCampAudioPatch($Machine, [string]$Root) {
         [pscustomobject]@{
             Model = $Machine.Model
             AppliedAt = (Get-Date).ToString('o')
-            TestSigningWasEnabled = $testSigningWasEnabled
+            TestSigningWasEnabled = $testSigningForRecovery
             ToolSha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB'
             SourceTableSha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87'
             TableSha256 = $overrideHash
             TablePath = $paths.OverrideTable
+            SystemTablePath = $paths.SystemTable
+            SystemTableCreatedByBetterCamp = ($systemTableOwnedBefore -or (-not $systemTableExisted))
             OemRevision = '0x7FFFFFFF'
         } | ConvertTo-Json | Set-Content -LiteralPath $paths.State -Encoding UTF8
     } catch {
         $stateError = $_.Exception.Message
         $tableRollback = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.OverrideTable)
+        if (-not $systemTableExisted -and (Test-Path -LiteralPath $paths.SystemTable)) { Remove-Item -LiteralPath $paths.SystemTable -Force }
         $signingRollback = $null
-        if ($testSigningWasEnabled -eq $false) {
+        if ($testSigningBeforeThisRun -eq $false) {
             $signingRollback = Invoke-BetterCampNative 'bcdedit.exe' @('/set', '{current}', 'testsigning', 'off')
         }
         if (Test-Path -LiteralPath $paths.State) { Remove-Item -LiteralPath $paths.State -Force }
@@ -408,6 +444,15 @@ function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
     } elseif ($null -ne $state -and $state.TableSha256 -ne '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87') {
         throw 'The BetterCamp audio patch state does not match the legacy table. No settings were changed.'
     }
+    $removeSystemTable = $false
+    if ($null -ne $state -and 'SystemTableCreatedByBetterCamp' -in $state.PSObject.Properties.Name -and $state.SystemTableCreatedByBetterCamp) {
+        if ('SystemTablePath' -notin $state.PSObject.Properties.Name -or
+            [IO.Path]::GetFullPath([string]$state.SystemTablePath) -ne [IO.Path]::GetFullPath($paths.SystemTable)) {
+            throw 'The BetterCamp audio patch state contains an unexpected system table path. No settings were changed.'
+        }
+        Assert-BetterCampFileHash $paths.SystemTable '9AD7A614D2CDB7A67A47C0959B00B0CA188811623753DB229F3E56D71B13990D'
+        $removeSystemTable = $true
+    }
     if ($null -eq $state) {
         Write-Warning 'No BetterCamp state file was found, so test-signing mode was left unchanged.'
     } elseif ($state.TestSigningWasEnabled -eq $false) {
@@ -417,6 +462,7 @@ function Remove-BetterCampAudioPatch($Machine, [string]$Root) {
     $removed = Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $tableToRemove)
     if ($removed.ExitCode -ne 0) { throw 'Test-signing mode was restored when applicable, but the ACPI audio table could not be removed.' }
     if ($tableToRemove -ne $paths.Table) { Invoke-BetterCampNative $paths.Tool @('/loadtable', '-v', '-d', $paths.Table) | Out-Null }
+    if ($removeSystemTable) { Remove-Item -LiteralPath $paths.SystemTable -Force }
     if ($null -ne $state) { Remove-Item -LiteralPath $paths.State -Force }
     if (Test-Path -LiteralPath $paths.OverrideTable) { Remove-Item -LiteralPath $paths.OverrideTable -Force }
     Write-Host 'UEFI audio patch removed. Restart Windows to finish reverting it.'
