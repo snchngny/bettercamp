@@ -19,7 +19,7 @@ $launcherBase = Join-Path $env:LOCALAPPDATA 'BetterCamp/launcher'
 $launcherRoot = Join-Path $launcherBase ([guid]::NewGuid().ToString('N'))
 $commonDirectory = Join-Path $launcherRoot 'scripts'
 $audioDirectory = Join-Path $launcherRoot 'Audio_2011_2012'
-$launcherRevision = 'eaeb38c99f591ea022f32296f6ec3329fbd9889f'
+$launcherRevision = 'e808fef6d910a2e606821acb43760d827d7d9d3c'
 
 try {
     function Get-LauncherHash([string]$Path) {
