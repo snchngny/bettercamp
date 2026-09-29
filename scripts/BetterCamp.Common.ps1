@@ -185,7 +185,13 @@ function Get-BetterCampInstalledSoftware([string[]]$Names) {
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
     )
     return @(Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -in $Names -and $_.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$' } |
+        Where-Object {
+            $displayName = $_.PSObject.Properties['DisplayName']
+            $productCode = $_.PSObject.Properties['PSChildName']
+            $null -ne $displayName -and $null -ne $productCode -and
+                $displayName.Value -in $Names -and
+                $productCode.Value -match '^\{[0-9A-Fa-f-]{36}\}$'
+        } |
         Sort-Object PSChildName -Unique)
 }
 

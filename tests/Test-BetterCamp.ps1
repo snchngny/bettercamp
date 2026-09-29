@@ -83,6 +83,15 @@ try {
     Assert-Throws { Install-BetterCampDrivers -Path $pack -Machine ([pscustomobject]@{Model='MacBookPro9,2'}) } 'individual driver failure propagated'
 
     $script:removedProducts = @()
+    function Get-ItemProperty {
+        @(
+            [pscustomobject]@{PSChildName='{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}'},
+            [pscustomobject]@{DisplayName='Boot Camp Services';PSChildName='{FA2B2C2A-EA41-495A-9308-60726125D562}'}
+        )
+    }
+    $softwareWithUnnamedEntry = @(Get-BetterCampInstalledSoftware @('Boot Camp', 'Boot Camp Services'))
+    Assert-True ($softwareWithUnnamedEntry.Count -eq 1 -and $softwareWithUnnamedEntry[0].DisplayName -eq 'Boot Camp Services') 'uninstall entries without DisplayName are skipped under strict mode'
+    Remove-Item -Path Function:Get-ItemProperty -Force
     $originalFindCachedPackage = ${function:Find-BetterCampCachedPackage}
     function Get-BetterCampInstalledSoftware {
         param($Names)
