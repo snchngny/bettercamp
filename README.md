@@ -9,7 +9,7 @@ MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShell�
 Windows 11でPowerShellを開き、次の1行を貼り付けてEnterを押します。リポジトリのZIP保存・展開は不要です。
 
 ```powershell
-irm https://raw.githubusercontent.com/snchngny/bettercamp/dd9c12ecc29c3b2c9f6c639d3c48651bf593f64c/run.ps1 | iex
+irm https://raw.githubusercontent.com/snchngny/bettercamp/83fd093938ba8bde09b6915f87b6848dcadc6a3b/run.ps1 | iex
 ```
 
 管理者権限を求めるWindowsの画面で「はい」を選びます。必要なデバイスドライバーを順番に導入した後、Windowsを再起動してください。
@@ -42,7 +42,7 @@ PowerShellへ貼り付ける方式を使いたくない場合だけ、[ZIPをダ
 以前の版で一括セットアップを実行済みの場合、次の救済コマンドはBoot Camp ManagerとControl PanelのMSIを対話表示付きでアンインストールします。Apple Software Updateも削除を試みますが、そちらだけ失敗してもBoot Campの削除は完了扱いにします。導入済みのデバイスドライバーと音声パッチは残します。MSIエラー時は`%LOCALAPPDATA%\BetterCamp\logs`に詳細ログを保存します。
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/dd9c12ecc29c3b2c9f6c639d3c48651bf593f64c/run.ps1))) -CleanupBootCamp
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/83fd093938ba8bde09b6915f87b6848dcadc6a3b/run.ps1))) -CleanupBootCamp
 ```
 
 ## 手元のドライバー・最新版を使う
@@ -80,6 +80,12 @@ bettercamp-main/
 .\Start-BetterCamp.cmd -Diagnose
 ```
 
+ファイルを保存していない場合は次の1行で診断できます。`acpitabl.dat`のhashに加え、Windowsが実際に読み込んだDSDTのOEM revisionとhashも表示します:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/83fd093938ba8bde09b6915f87b6848dcadc6a3b/run.ps1))) -Diagnose
+```
+
 対応MacBook上で取得・署名検証だけ実行:
 
 ```powershell
@@ -103,13 +109,13 @@ bettercamp-main/
 すでにBoot Campドライバーを導入済みで、音声パッチだけ適用する場合:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/dd9c12ecc29c3b2c9f6c639d3c48651bf593f64c/run.ps1))) -AudioPatchOnly
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/83fd093938ba8bde09b6915f87b6848dcadc6a3b/run.ps1))) -AudioPatchOnly
 ```
 
 元へ戻す場合。登録したDSDTを削除し、BetterCampが今回有効にした場合だけテスト署名モードも無効にします:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/dd9c12ecc29c3b2c9f6c639d3c48651bf593f64c/run.ps1))) -RemoveAudioPatch
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/83fd093938ba8bde09b6915f87b6848dcadc6a3b/run.ps1))) -RemoveAudioPatch
 ```
 
 `MacBookPro9,1`、`MacBookPro10,1`、`MacBookPro10,2`には同じDSDTを自動適用しません。元READMEでの2012年実機確認が`MacBookPro9,2`だけで、機種固有ACPIの横断利用を確認できないためです。`-Diagnose`で機種IDを確認できます。Boot Camp導入だけにする場合は`-SkipAudioPatch`を指定できます。
@@ -121,7 +127,7 @@ bettercamp-main/
 次の修復コマンドは、検証済みDSDTの処理内容を変えずOEM revisionとchecksumだけを更新し、Microsoftが案内する`%SystemRoot%\System32\acpitabl.dat`として起動時に読み込ませます。異なる既存`acpitabl.dat`は上書きしません。続けて`MacBookPro9,2`のCirrus CS4206ドライバーを入れ直してデバイスを再スキャンします。**完了後の再起動が必須です。**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/dd9c12ecc29c3b2c9f6c639d3c48651bf593f64c/run.ps1))) -RepairAudio
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/83fd093938ba8bde09b6915f87b6848dcadc6a3b/run.ps1))) -RepairAudio
 ```
 
 再起動後もコード10なら、デバイスマネージャーの対象デバイスで「詳細」→「ハードウェアID」を確認してください。`PCI\VEN_8086`ならCirrus endpointではなくIntel HDA controllerの初期化失敗です。`HDAUDIO\FUNC_01&VEN_1013&DEV_4206`ならCirrus CS4206です。別IDへ別機種用INFを強制適用しないでください。
