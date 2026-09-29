@@ -131,3 +131,5 @@ try {
     }
 }
 Write-Host "PASS: $script:count checks (no real drivers installed)"
+# CI propagates LASTEXITCODE; the final rejection case intentionally sets it to 1.
+exit 0
