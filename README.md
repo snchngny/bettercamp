@@ -9,7 +9,7 @@ MacBook Pro 2012に**インストール済みのWindows 11**から、PowerShell�
 Windows 11でPowerShellを開き、次の1行を貼り付けてEnterを押します。リポジトリのZIP保存・展開は不要です。
 
 ```powershell
-irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1 | iex
+irm https://raw.githubusercontent.com/snchngny/bettercamp/bea78ad008343870b5381a124296eea18b562ca1/run.ps1 | iex
 ```
 
 管理者権限を求めるWindowsの画面で「はい」を選び、Appleのインストーラーに従います。完了後にWindowsを再起動してください。
@@ -90,13 +90,13 @@ bettercamp-main/
 すでにBoot Campドライバーを導入済みで、音声パッチだけ適用する場合:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1))) -AudioPatchOnly
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/bea78ad008343870b5381a124296eea18b562ca1/run.ps1))) -AudioPatchOnly
 ```
 
 元へ戻す場合。登録したDSDTを削除し、BetterCampが今回有効にした場合だけテスト署名モードも無効にします:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/main/run.ps1))) -RemoveAudioPatch
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/snchngny/bettercamp/bea78ad008343870b5381a124296eea18b562ca1/run.ps1))) -RemoveAudioPatch
 ```
 
 `MacBookPro9,1`、`MacBookPro10,1`、`MacBookPro10,2`には同じDSDTを自動適用しません。元READMEでの2012年実機確認が`MacBookPro9,2`だけで、機種固有ACPIの横断利用を確認できないためです。`-Diagnose`で機種IDを確認できます。Boot Camp導入だけにする場合は`-SkipAudioPatch`を指定できます。
