@@ -393,12 +393,22 @@ function Repair-BetterCampAudio([string]$Path, $Machine, [string]$Root) {
     $scan = Invoke-BetterCampNative 'pnputil.exe' @('/scan-devices')
     if ($scan.ExitCode -ne 0) { Write-Warning 'Windows device rescan failed; the reboot will still perform hardware discovery.' }
     $problems = @(Get-CimInstance -ClassName Win32_PnPEntity | Where-Object {
-        $_.ConfigManagerErrorCode -ne 0 -and ($_.Name -match 'Audio|Cirrus|High Definition' -or $_.PNPDeviceID -match '^(PCI|HDAUDIO)\\')
+        $_.ConfigManagerErrorCode -ne 0 -and (Test-BetterCampAudioDevice $_)
     })
     foreach ($device in $problems) {
         Write-Host "Pending device: $($device.Name) | Code $($device.ConfigManagerErrorCode) | $($device.PNPDeviceID)"
     }
     Write-Host 'Audio repair staged with a higher ACPI table revision. Restart Windows before judging Code 10.'
+}
+
+function Test-BetterCampAudioDevice($Device) {
+    $nameProperty = $Device.PSObject.Properties['Name']
+    $idProperty = $Device.PSObject.Properties['PNPDeviceID']
+    $name = if ($null -ne $nameProperty) { [string]$nameProperty.Value } else { '' }
+    $id = if ($null -ne $idProperty) { [string]$idProperty.Value } else { '' }
+    return $name -match 'Audio|Cirrus|High Definition' -or
+        $id -match '^HDAUDIO\\' -or
+        $id -match '^PCI\\VEN_8086&DEV_(1C20|1E20)(?:&|\\|$)'
 }
 
 function Get-BetterCampActiveDsdtInfo {
@@ -455,7 +465,7 @@ function Show-BetterCampAudioDiagnosis([string]$Root) {
     if ($testSigning.Success) { Write-Host "Windows test signing: $($testSigning.Groups[1].Value)" }
     else { Write-Host 'Windows test signing: not shown in the current boot entry' }
     $devices = @(Get-CimInstance -ClassName Win32_PnPEntity | Where-Object {
-        $_.Name -match 'Audio|Cirrus|High Definition' -or $_.PNPDeviceID -match '^(PCI|HDAUDIO)\\'
+        Test-BetterCampAudioDevice $_
     })
     foreach ($device in $devices) {
         Write-Host "Audio device: $($device.Name) | Code $($device.ConfigManagerErrorCode) | $($device.PNPDeviceID)"

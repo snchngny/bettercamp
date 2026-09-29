@@ -207,15 +207,22 @@ try {
             'Win32_ComputerSystemProduct' { [pscustomobject]@{Name='MacBookPro9,2'} }
             'Win32_OperatingSystem' { [pscustomobject]@{BuildNumber='26100'} }
             'Win32_VideoController' { [pscustomobject]@{Name='Intel HD Graphics 4000'} }
-            'Win32_PnPEntity' { [pscustomobject]@{Name='High Definition Audio Controller';PNPDeviceID='PCI\VEN_8086&DEV_1E20';ConfigManagerErrorCode=10} }
+            'Win32_PnPEntity' {
+                @(
+                    [pscustomobject]@{Name='High Definition Audio Controller';PNPDeviceID='PCI\VEN_8086&DEV_1E20';ConfigManagerErrorCode=10},
+                    [pscustomobject]@{Name='Ethernet Controller';PNPDeviceID='PCI\VEN_8086&DEV_1502';ConfigManagerErrorCode=10}
+                )
+            }
             default { throw "Unexpected CIM query: $ClassName" }
         }
     }
     function Get-ItemPropertyValue { param($LiteralPath,$Name); return 2 }
     function Start-Process { throw 'Diagnosis must not launch a process' }
     function Invoke-WebRequest { throw 'Diagnosis must not access network' }
-    & (Join-Path $root 'bettercamp.ps1') -Diagnose
+    $diagnosisOutput = (& (Join-Path $root 'bettercamp.ps1') -Diagnose 6>&1 | Out-String)
+    Write-Host $diagnosisOutput
     Assert-True ($LASTEXITCODE -eq 0) 'diagnose target machine'
+    Assert-True ($diagnosisOutput -match 'PCI\\VEN_8086&DEV_1E20' -and $diagnosisOutput -notmatch 'DEV_1502') 'diagnosis lists the Intel HDA controller without unrelated PCI devices'
 
     # Exercise the real archive/extraction and download-only entry point with a local ZIP.
     Set-Content -LiteralPath (Join-Path $pack 'BootCamp.xml') -Value '<Root><ProductVersion>5.1.5621</ProductVersion></Root>'
