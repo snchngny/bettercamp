@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [string]$BootCampPath,
+    [ValidateSet('Macmini8,1', 'MacBookPro9,2')][string]$TargetModel,
     [switch]$Diagnose,
     [switch]$DownloadOnly,
     [switch]$AudioPatchOnly,
@@ -15,6 +16,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# A checked-out copy uses its own verified sources. Remote use remains revision-pinned.
+if (-not $LauncherSourceDirectory -and $PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'bettercamp.ps1'))) {
+    $LauncherSourceDirectory = $PSScriptRoot
+}
 $launcherBase = Join-Path $env:LOCALAPPDATA 'BetterCamp/launcher'
 $launcherRoot = Join-Path $launcherBase ([guid]::NewGuid().ToString('N'))
 $commonDirectory = Join-Path $launcherRoot 'scripts'
@@ -34,8 +39,9 @@ try {
     New-Item -ItemType Directory -Path $commonDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $audioDirectory -Force | Out-Null
     $files = @(
-        @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = '19B937B699CD0B6DBB1C101BA2C12977CD7F26DE43B6A423EAE04C150EE11CD0' },
-        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = '2BCCBFF561532BE7E464464E6905AF23457F706149E8442FEC82B42CE38784E6' },
+        @{ Name = 'bettercamp.ps1'; Destination = (Join-Path $launcherRoot 'bettercamp.ps1'); Sha256 = '4E1DC2C2B461459D69B5682E306FFD2E292F26380AEB545CD906C88231624734' },
+        @{ Name = 'scripts/BetterCamp.Common.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Common.ps1'); Sha256 = '42F8ACEB73EA0F9AAB70C5E79951919139A25CDEDE2BC501A32DB24878D21181' },
+        @{ Name = 'scripts/BetterCamp.Macmini.ps1'; Destination = (Join-Path $commonDirectory 'BetterCamp.Macmini.ps1'); Sha256 = '107390EC6070ED38DFCA0D14B17CCC3902F70B088BF232FF3BECEFF84BFDEE57' },
         @{ Name = 'Audio_2011_2012/asl.exe'; Destination = (Join-Path $audioDirectory 'asl.exe'); Sha256 = '279AE784566DBB344539E6495CF12CC96C95BD75B189026A5488E6E4EE8A31BB' },
         @{ Name = 'Audio_2011_2012/dsdt_2012.aml'; Destination = (Join-Path $audioDirectory 'dsdt_2012.aml'); Sha256 = '9C16ADF17E7F4F6462A8E598616D81E37E4CEA8B436DD92B535F543C4AF36F87' }
     )
@@ -56,6 +62,7 @@ try {
     function ConvertTo-Literal([string]$Value) { return "'" + $Value.Replace("'", "''") + "'" }
     $command = '$global:LASTEXITCODE = 0; & ' + (ConvertTo-Literal (Join-Path $launcherRoot 'bettercamp.ps1'))
     if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-Literal $BootCampPath) }
+    if ($TargetModel) { $command += ' -TargetModel ' + (ConvertTo-Literal $TargetModel) }
     if ($Diagnose) { $command += ' -Diagnose' }
     if ($DownloadOnly) { $command += ' -DownloadOnly' }
     if ($AudioPatchOnly) { $command += ' -AudioPatchOnly' }

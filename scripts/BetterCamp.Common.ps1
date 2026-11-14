@@ -23,11 +23,10 @@ function Get-BetterCampMachine {
     }
 }
 
-function Assert-BetterCampMachine($Machine, [switch]$AllowMacmini81) {
-    $supported = @('MacBookPro9,1', 'MacBookPro9,2', 'MacBookPro10,1', 'MacBookPro10,2')
-    if ($AllowMacmini81) { $supported += 'Macmini8,1' }
+function Assert-BetterCampMachine($Machine) {
+    $supported = @('MacBookPro9,1', 'MacBookPro9,2', 'MacBookPro10,1', 'MacBookPro10,2', 'Macmini8,1')
     if ($Machine.Model -notin $supported) {
-        throw "Unsupported model: $($Machine.Model). This launcher targets the 2012 MacBook Pro family."
+        throw "Unsupported model: $($Machine.Model). This launcher targets 2012 MacBook Pro models and Mac mini 2018."
     }
     if (-not $Machine.Is64Bit -or $Machine.Build -lt 22000) { throw 'This launcher requires 64-bit Windows 11 (build 22000 or later).' }
 }

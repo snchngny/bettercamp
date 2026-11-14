@@ -9,4 +9,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Windows PowerShell 5.1 regression tests
         shell: powershell
-        run: ./tests/Test-BetterCamp.ps1
+        run: |
+          ./tests/Test-BetterCamp.ps1
+          ./tests/Test-BetterCampMacmini.ps1

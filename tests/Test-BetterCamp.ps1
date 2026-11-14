@@ -18,9 +18,8 @@ foreach ($model in @('MacBookPro9,1', 'MacBookPro9,2', 'MacBookPro10,1', 'MacBoo
     Assert-BetterCampMachine ([pscustomobject]@{Model=$model;Build=26100;Is64Bit=$true})
     $script:count++
 }
-Assert-BetterCampMachine ([pscustomobject]@{Model='Macmini8,1';Build=26100;Is64Bit=$true}) -AllowMacmini81
+Assert-BetterCampMachine ([pscustomobject]@{Model='Macmini8,1';Build=26100;Is64Bit=$true})
 $script:count++
-Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='Macmini8,1';Build=26100;Is64Bit=$true}) } 'Macmini8,1 requires the dedicated repair mode'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro8,1';Build=26100;Is64Bit=$true}) } 'wrong model'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro9,2';Build=19045;Is64Bit=$true}) } 'Windows 10'
 Assert-Throws { Assert-BetterCampMachine ([pscustomobject]@{Model='MacBookPro9,2';Build=26100;Is64Bit=$false}) } '32-bit OS'
@@ -343,6 +342,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $tamperedLauncher 'scripts'),(Join-Path $tamperedLauncher 'Audio_2011_2012') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $root 'bettercamp.ps1') -Destination $tamperedLauncher
     Copy-Item -LiteralPath (Join-Path $root 'scripts/BetterCamp.Common.ps1') -Destination (Join-Path $tamperedLauncher 'scripts')
+    Copy-Item -LiteralPath (Join-Path $root 'scripts/BetterCamp.Macmini.ps1') -Destination (Join-Path $tamperedLauncher 'scripts')
     Copy-Item -LiteralPath (Join-Path $root 'Audio_2011_2012/asl.exe'),(Join-Path $root 'Audio_2011_2012/dsdt_2012.aml') -Destination (Join-Path $tamperedLauncher 'Audio_2011_2012')
     Add-Content -LiteralPath (Join-Path $tamperedLauncher 'bettercamp.ps1') -Value '# tampered'
     Assert-Throws { & (Join-Path $root 'run.ps1') -LauncherSourceDirectory $tamperedLauncher -StageOnly } 'bootstrap rejects modified launcher files'

@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [string]$BootCampPath,
+    [ValidateSet('Macmini8,1', 'MacBookPro9,2')][string]$TargetModel,
     [switch]$Diagnose,
     [switch]$DownloadOnly,
     [switch]$AudioPatchOnly,
@@ -13,20 +14,33 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'scripts/BetterCamp.Common.ps1')
+. (Join-Path $PSScriptRoot 'scripts/BetterCamp.Macmini.ps1')
 try {
-    if ([Environment]::OSVersion.Platform -ne 'Win32NT') { throw 'Run inside Windows on your MacBook Pro.' }
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') { throw 'Run inside Windows.' }
     $machine = Get-BetterCampMachine
     Write-Host "Model: $($machine.Model) | Windows build: $($machine.Build) | Firmware: $($machine.Firmware)"
     Write-Host "Graphics: $($machine.Graphics -join ', ')"
-    Assert-BetterCampMachine $machine -AllowMacmini81:$RepairBluetooth
     $operationCount = @($Diagnose, $DownloadOnly, $AudioPatchOnly, $RepairAudio, $RepairBluetooth, $RemoveAudioPatch, $CleanupBootCamp).Where({ $_ }).Count
     if ($operationCount -gt 1) { throw 'Choose only one operation mode.' }
+    if ($TargetModel -and -not $DownloadOnly) { throw '-TargetModel is only allowed with -DownloadOnly; installation always uses the actual Mac model.' }
+    $packageMachine = $machine
+    if ($TargetModel) {
+        $packageMachine = [pscustomobject]@{Model=$TargetModel;Build=$machine.Build;Is64Bit=$machine.Is64Bit}
+    }
+    Assert-BetterCampMachine $packageMachine
+    if ($machine.Model -eq 'Macmini8,1' -and ($AudioPatchOnly -or $RepairAudio -or $RemoveAudioPatch)) {
+        throw 'The 2012 MacBook Pro audio patch must not be applied to Mac mini 2018.'
+    }
     if ($Diagnose) {
-        Show-BetterCampAudioDiagnosis -Root $PSScriptRoot -Machine $machine
+        if ($machine.Model -eq 'Macmini8,1') { Show-BetterCampMacminiDiagnosis }
+        else { Show-BetterCampAudioDiagnosis -Root $PSScriptRoot -Machine $machine }
         Write-Host 'Target recognized. Diagnosis complete; no drivers or boot settings were changed.'
         exit 0
     }
-    if ($BootCampPath) { $BootCampPath = Resolve-BetterCampPath -Path $BootCampPath -Root $PSScriptRoot }
+    if ($BootCampPath) {
+        if ($packageMachine.Model -eq 'Macmini8,1') { $BootCampPath = Resolve-BetterCampMacminiPath -Path $BootCampPath -Root $PSScriptRoot }
+        else { $BootCampPath = Resolve-BetterCampPath -Path $BootCampPath -Root $PSScriptRoot }
+    }
     if (-not $DownloadOnly -and -not $RepairBluetooth -and -not (Test-BetterCampAdministrator)) {
         $command = '$global:LASTEXITCODE = 0; & ' + (ConvertTo-BetterCampLiteral $PSCommandPath)
         if ($BootCampPath) { $command += ' -BootCampPath ' + (ConvertTo-BetterCampLiteral $BootCampPath) }
@@ -54,6 +68,18 @@ try {
             Remove-BetterCampSoftware
         } elseif ($AudioPatchOnly) {
             Install-BetterCampAudioPatch -Machine $machine -Root $PSScriptRoot | Out-Null
+        } elseif ($packageMachine.Model -eq 'Macmini8,1') {
+            $pack = Resolve-BetterCampMacminiPath -Path $BootCampPath -Root $PSScriptRoot
+            if (-not $pack) { $pack = Get-BetterCampMacminiPackage }
+            Assert-BetterCampMacminiPackage $pack
+            if ($DownloadOnly) {
+                Write-Host "Mac mini 2018 package verified: $pack"
+                Write-Host "Copy this complete folder to USB for offline installation. On the target Mac, run: .\Start-BetterCamp.cmd -BootCampPath `"$pack`""
+            } else {
+                $result = Install-BetterCampMacminiDrivers -Path $pack -Machine $machine
+                Write-Host "$($result.Count) driver packages processed. Windows chooses the best matching driver; existing newer drivers are not forcibly replaced. Restart Windows, then verify audio, USB, network and display."
+                Show-BetterCampMacminiDiagnosis
+            }
         } else {
             $pack = Resolve-BetterCampPath -Path $BootCampPath -Root $PSScriptRoot
             if (-not $pack) {
